@@ -24,7 +24,7 @@ router.post('/', (req, res) => {
   const filename = `${videoId}.mp3`;
   const outputTemplate = path.join(DOWNLOADS_DIR, `${videoId}.%(ext)s`);
 
-  activeDownloads.set(videoId, { status: 'downloading', progress: 0 });
+  activeDownloads.set(videoId, { status: 'downloading', progress: 0, error: null });
 
   const ytdlp = spawn('yt-dlp', [
     '-x',
@@ -35,29 +35,30 @@ router.post('/', (req, res) => {
     '--no-warnings',
     '--no-check-certificates',
     `https://www.youtube.com/watch?v=${videoId}`,
-  ]);
+  ], { shell: true });
 
-  ytdlp.stdout.on('data', (data) => {
+  const onData = (data) => {
     const str = data.toString();
+    console.log('[yt-dlp]', str.trim());
     const match = str.match(/(\d+\.?\d*)%/);
     if (match) {
       const current = activeDownloads.get(videoId);
       if (current) activeDownloads.set(videoId, { ...current, progress: parseFloat(match[1]) });
     }
-  });
+  };
 
-  ytdlp.stderr.on('data', (data) => {
-    const str = data.toString();
-    const match = str.match(/(\d+\.?\d*)%/);
-    if (match) {
-      const current = activeDownloads.get(videoId);
-      if (current) activeDownloads.set(videoId, { ...current, progress: parseFloat(match[1]) });
-    }
+  ytdlp.stdout.on('data', onData);
+  ytdlp.stderr.on('data', onData);
+
+  ytdlp.on('error', (err) => {
+    console.error('[yt-dlp spawn error]', err.message);
+    activeDownloads.set(videoId, { status: 'error', progress: 0, error: err.message });
   });
 
   ytdlp.on('close', (code) => {
-    activeDownloads.delete(videoId);
+    console.log('[yt-dlp] exited with code', code);
     if (code === 0) {
+      activeDownloads.delete(videoId);
       try {
         db.prepare(
           `INSERT OR IGNORE INTO tracks (id, video_id, title, artist, duration, thumbnail, filename, added_at)
@@ -75,6 +76,8 @@ router.post('/', (req, res) => {
       } catch (e) {
         console.error('DB insert error:', e.message);
       }
+    } else {
+      activeDownloads.set(videoId, { status: 'error', progress: 0, error: `yt-dlp exited with code ${code}` });
     }
   });
 
@@ -88,7 +91,13 @@ router.get('/status/:videoId', (req, res) => {
   if (track) return res.json({ status: 'complete', track });
 
   const dl = activeDownloads.get(videoId);
-  if (dl) return res.json({ status: 'downloading', progress: dl.progress });
+  if (dl) {
+    if (dl.status === 'error') {
+      activeDownloads.delete(videoId);
+      return res.json({ status: 'error', error: dl.error });
+    }
+    return res.json({ status: 'downloading', progress: dl.progress });
+  }
 
   res.json({ status: 'not_started' });
 });

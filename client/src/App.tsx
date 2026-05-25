@@ -6,6 +6,7 @@ import SearchView from './components/SearchView';
 import LibraryView from './components/LibraryView';
 import PlaylistView from './components/PlaylistView';
 import Player from './components/Player';
+import Toaster from './components/Toaster';
 
 export default function App() {
   const { view, setLibrary, setPlaylists } = useStore();
@@ -33,6 +34,7 @@ export default function App() {
         </main>
       </div>
       <Player />
+      <Toaster />
     </div>
   );
 }
