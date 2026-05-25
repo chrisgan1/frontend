@@ -16,6 +16,7 @@ router.get('/', async (req, res) => {
     '--skip-download',
     '--no-playlist',
     '--no-warnings',
+    '--no-check-certificates',
   ]);
 
   ytdlp.stdout.on('data', (data) => {

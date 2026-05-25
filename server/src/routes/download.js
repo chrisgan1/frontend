@@ -33,6 +33,7 @@ router.post('/', (req, res) => {
     '-o', outputTemplate,
     '--no-playlist',
     '--no-warnings',
+    '--no-check-certificates',
     `https://www.youtube.com/watch?v=${videoId}`,
   ]);
 
