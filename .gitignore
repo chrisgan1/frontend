@@ -1,0 +1,8 @@
+node_modules/
+server/node_modules/
+client/node_modules/
+client/dist/
+server/groove.db
+server/downloads/
+*.mp3
+.DS_Store
