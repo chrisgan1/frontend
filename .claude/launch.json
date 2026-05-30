@@ -1,0 +1,5 @@
+{
+  "command": "npm run dev --prefix client -- --host",
+  "port": 5173,
+  "autoPort": true
+}
