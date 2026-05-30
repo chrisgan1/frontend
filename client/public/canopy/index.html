@@ -1,0 +1,891 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Canopy.io — Forest Territory Battle</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;background:#050d06;overflow:hidden;font-family:'Segoe UI',system-ui,sans-serif;color:#c8e6c9;user-select:none}
+#gameCanvas{display:block;cursor:crosshair;position:fixed;inset:0}
+
+/* ── HUD ── */
+.hud-panel{position:fixed;background:rgba(4,12,5,.88);border:1px solid #1e4a23;border-radius:10px;backdrop-filter:blur(6px);padding:10px 14px}
+#currency{top:12px;left:12px;display:flex;align-items:center;gap:8px;font-size:20px;font-weight:700;pointer-events:none}
+#currency .icon{font-size:22px}
+#stats{top:66px;left:12px;font-size:13px;line-height:1.75;pointer-events:none;min-width:155px}
+#stats span{color:#a5d6a7;font-weight:600}
+
+/* ── Leaderboard ── */
+#leaderboard{top:12px;right:12px;min-width:175px;pointer-events:none}
+#leaderboard h3{font-size:11px;text-transform:uppercase;letter-spacing:1.2px;color:#66bb6a;margin-bottom:7px}
+.lb-row{display:flex;align-items:center;gap:7px;font-size:13px;padding:2px 0}
+.lb-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+.lb-name{flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;color:#81c784}
+.lb-name.is-player{color:#c8e6c9;font-weight:700}
+.lb-score{color:#a5d6a7;font-size:11px}
+
+/* ── Shop button ── */
+#shopBtn{position:fixed;bottom:22px;left:14px;background:#1a4f1e;border:1px solid #43a047;border-radius:9px;padding:10px 20px;font-size:14px;cursor:pointer;color:#c8e6c9;transition:background .15s;z-index:10}
+#shopBtn:hover{background:#2e7d32}
+
+/* ── Shop panel ── */
+#shopPanel{position:fixed;bottom:0;left:0;right:0;background:rgba(3,10,4,.96);border-top:2px solid #1e4a23;padding:16px 20px 22px;display:none;z-index:20;backdrop-filter:blur(10px)}
+#shopPanel.open{display:block}
+#shopPanel h2{font-size:15px;color:#66bb6a;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:13px}
+#closeShop{position:absolute;top:12px;right:14px;background:none;border:1px solid #1e4a23;border-radius:5px;color:#66bb6a;padding:4px 10px;cursor:pointer;font-size:13px}
+#closeShop:hover{background:#1a4f1e}
+.upg-grid{display:flex;gap:11px;flex-wrap:wrap}
+.upg-card{background:#071209;border:1px solid #1e4a23;border-radius:9px;padding:11px 13px;width:158px;cursor:pointer;transition:border-color .15s,background .15s;position:relative}
+.upg-card:hover:not(.cant-afford):not(.maxed){border-color:#43a047;background:#0a1f0d}
+.upg-card.cant-afford{opacity:.55;cursor:not-allowed}
+.upg-card.maxed{border-color:#f9a825;cursor:default;opacity:.85}
+.upg-icon{font-size:22px;margin-bottom:5px}
+.upg-name{font-size:13px;font-weight:700;color:#c8e6c9}
+.upg-desc{font-size:11px;color:#66bb6a;margin:3px 0 8px;line-height:1.4}
+.upg-dots{display:flex;gap:3px;margin-bottom:8px}
+.dot{width:13px;height:5px;border-radius:3px;background:#1a4f1e}
+.dot.on{background:#43a047}
+.upg-cost{font-size:12px;color:#fdd835;display:flex;align-items:center;gap:3px}
+.upg-cost.maxed-label{color:#f9a825}
+
+/* ── Minimap ── */
+#minimap{position:fixed;bottom:22px;right:14px;border:1px solid #1e4a23;border-radius:5px;image-rendering:pixelated;width:150px;height:110px}
+
+/* ── Overlay screens ── */
+.screen{position:fixed;inset:0;background:rgba(0,0,0,.78);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:50;gap:0}
+.screen h1{font-size:52px;color:#43a047;text-shadow:0 0 28px #43a047;margin-bottom:6px;letter-spacing:-1px}
+.screen .sub{font-size:15px;color:#81c784;margin-bottom:22px;text-align:center;max-width:420px;line-height:1.55}
+.big-btn{background:#1a4f1e;border:2px solid #43a047;border-radius:9px;color:#c8e6c9;font-size:18px;padding:13px 36px;cursor:pointer;transition:background .15s,transform .1s;margin-top:6px}
+.big-btn:hover{background:#2e7d32;transform:scale(1.03)}
+#nameInput{background:#071209;border:1px solid #43a047;border-radius:7px;color:#c8e6c9;font-size:17px;padding:9px 16px;margin-bottom:6px;text-align:center;outline:none;width:220px}
+#deathScreen{display:none}
+
+/* ── Tip ── */
+#tip{position:fixed;bottom:70px;left:14px;font-size:11px;color:#3a6040;line-height:1.6;pointer-events:none}
+</style>
+</head>
+<body>
+<canvas id="gameCanvas"></canvas>
+<canvas id="minimap" width="150" height="110"></canvas>
+
+<div class="hud-panel" id="currency">
+  <span class="icon">☀️</span>
+  <span id="sunAmt">50</span>
+</div>
+<div class="hud-panel" id="stats">
+  <div>Territory: <span id="terrPct">0%</span></div>
+  <div>Rank: <span id="rankDisp">#—</span></div>
+  <div>Score: <span id="scoreDisp">0</span></div>
+</div>
+<div class="hud-panel" id="leaderboard">
+  <h3>🌿 Canopy Ranks</h3>
+  <div id="lbRows"></div>
+</div>
+
+<button id="shopBtn">🌱 Shop (U)</button>
+<div id="tip">Hold mouse to direct growth<br>Scroll to zoom</div>
+
+<div id="shopPanel">
+  <h2>🌿 Canopy Upgrades</h2>
+  <button id="closeShop">✕ Close</button>
+  <div class="upg-grid" id="upgGrid"></div>
+</div>
+
+<div class="screen" id="startScreen">
+  <h1>Canopy.io</h1>
+  <div class="sub">Spread your canopy across the ancient forest floor.<br>Outgrow rivals, claim sunlight, and rule the canopy!</div>
+  <input id="nameInput" type="text" placeholder="Name your plant" maxlength="14" value="Seedling">
+  <button class="big-btn" id="startBtn">🌱 Sprout!</button>
+</div>
+
+<div class="screen" id="deathScreen">
+  <h1 style="color:#e53935;text-shadow:0 0 28px #e53935">Withered!</h1>
+  <div class="sub" id="deathMsg">Your canopy was consumed.</div>
+  <button class="big-btn" id="respawnBtn">🌿 Regrow</button>
+</div>
+
+<script>
+'use strict';
+// ================================================================
+//  CANOPY.IO  —  Plant Territory Battle
+// ================================================================
+
+const GW = 150, GH = 110, CPX = 8;
+const CELLS = GW * GH;
+const NUM_BOTS = 7;
+const TICK_MS = 80;
+const INCOME_MS = 1000;
+
+// ── Upgrade definitions ──────────────────────────────────────────
+const UPGRADES = [
+  { id:'speed',    icon:'🌿', name:'Growth Speed',    desc:'Spread your canopy faster each tick',   max:5, costs:[50,150,350,750,1500] },
+  { id:'power',    icon:'🍃', name:'Canopy Strength',  desc:'Overpower rivals in territory fights',   max:5, costs:[75,200,450,900,1800] },
+  { id:'roots',    icon:'☀️', name:'Root Efficiency',  desc:'Earn more sunlight per cell held',       max:5, costs:[60,175,400,850,1700] },
+  { id:'leaves',   icon:'🌱', name:'Broad Leaves',     desc:'Wider burst spread when growing',       max:3, costs:[200,600,1500] },
+  { id:'spore',    icon:'🌸', name:'Spore Burst',      desc:'Launch a spore to claim new ground',    max:99,costs:[], fixedCost:280, isAbility:true },
+];
+
+const BOT_NAMES = ['Fern','Ivy','Moss','Briar','Nettle','Thistle','Hawthorn'];
+const BOT_HUES  = [  0,   30,  270,  200,   55,   330,    180   ];
+const PLR_HUE   = 120;
+
+// ── Grid state ───────────────────────────────────────────────────
+const gOwner  = new Uint8Array(CELLS);       // 0=empty, 1=player, 2-8=bots
+const gStr    = new Float32Array(CELLS);      // ownership strength 0‑1
+const gShade  = new Float32Array(CELLS);      // per-cell visual variation −0.15…0.15
+const gRGB    = new Uint32Array(CELLS);       // cached ABGR colour (little-endian ImageData)
+
+// ── Entity registry ──────────────────────────────────────────────
+const entById = new Array(NUM_BOTS + 2).fill(null); // index by id
+let entities  = [];
+let player    = null;
+
+// ── Camera ───────────────────────────────────────────────────────
+const cam = { x:0, y:0, z:1.2 };
+const tgt = { x:0, y:0, z:1.2 };
+
+// ── Input ────────────────────────────────────────────────────────
+let mouseGX = 0, mouseGY = 0, directing = false;
+
+// ── Game bookkeeping ─────────────────────────────────────────────
+let gameRunning = false;
+let score       = 0;
+let shopOpen    = false;
+let tickTimer, incTimer, aiTimer;
+
+// ── Particles ────────────────────────────────────────────────────
+const particles = [];
+
+// ================================================================
+//  COLOUR UTILS
+// ================================================================
+function hsl2rgb(h, s, l) {
+  s /= 100; l /= 100;
+  const a = s * Math.min(l, 1 - l);
+  const f = n => { const k = (n + h / 30) % 12; return l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1); };
+  return [f(0) * 255 | 0, f(8) * 255 | 0, f(4) * 255 | 0];
+}
+
+// Pre-build lookup: for each entity id + strength level, cache ABGR word
+// We'll just compute on the fly but cache per-cell after a change.
+function cellABGR(ownerId, str, shade) {
+  if (ownerId === 0) {
+    const v = (10 + shade * 12) | 0;
+    return 0xFF000000 | (v << 16) | ((v + 8) << 8) | v;
+  }
+  const e = entById[ownerId];
+  const l = 22 + str * 22 + shade * 10;
+  const sat = 50 + str * 18;
+  const [r, g, b] = hsl2rgb(e.hue, sat, l);
+  return 0xFF000000 | (b << 16) | (g << 8) | r;
+}
+
+function markCellDirty(i) {
+  const oid = gOwner[i];
+  gRGB[i] = cellABGR(oid, gStr[i], gShade[i]);
+}
+
+// ================================================================
+//  ENTITY CLASS
+// ================================================================
+class Entity {
+  constructor(id, name, isBot, hue, sunlight) {
+    this.id        = id;
+    this.name      = name;
+    this.isBot     = isBot;
+    this.hue       = hue;
+    this.sunlight  = sunlight;
+    this.territory = 0;
+    this.alive     = true;
+    this.rootX     = 0;
+    this.rootY     = 0;
+    // upgrades
+    this.speed  = 0;
+    this.power  = 0;
+    this.roots  = 0;
+    this.leaves = 0;
+    this.spore  = 0;
+    // frontier (Set of cell indices adjacent to owned territory)
+    this.frontier = new Set();
+    // extra growth anchors from spore ability
+    this.sporeAnchors = [];
+    // AI
+    this.aiTick    = 0;
+    this.aiSpend   = Math.floor(Math.random() * 15);
+    this.aiAggro   = Math.random();   // 0=passive, 1=aggressive
+    this.aiTarget  = null;
+  }
+  growthRate() { return [2,3,5,8,13,20][this.speed]; }
+  strBonus()   { return 0.5 + this.power * 0.1; }
+  incRate()    { return [1, 1.4, 1.9, 2.6, 3.4, 4.5][this.roots]; }
+  spreadR()    { return 1 + this.leaves * 0.7; }
+}
+
+// ================================================================
+//  GRID HELPERS
+// ================================================================
+const idx = (x, y) => y * GW + x;
+const inB = (x, y) => x >= 0 && x < GW && y >= 0 && y < GH;
+const DIR4 = [[1,0],[-1,0],[0,1],[0,-1]];
+
+function addFrontier(e, cx, cy) {
+  for (const [dx, dy] of DIR4) {
+    const nx = cx + dx, ny = cy + dy;
+    if (inB(nx, ny) && gOwner[idx(nx, ny)] !== e.id) {
+      e.frontier.add(idx(nx, ny));
+    }
+  }
+}
+
+function onClaimed(ci, newId, oldId) {
+  const nx = ci % GW, ny = (ci / GW) | 0;
+  // New owner no longer needs ci in frontier
+  if (entById[newId]) entById[newId].frontier.delete(ci);
+  // Old owner might want it back
+  if (oldId && entById[oldId]) entById[oldId].frontier.add(ci);
+  // New owner explores neighbours
+  for (const [dx, dy] of DIR4) {
+    const ax = nx + dx, ay = ny + dy;
+    if (!inB(ax, ay)) continue;
+    const ai = idx(ax, ay);
+    if (gOwner[ai] !== newId && entById[newId]) {
+      entById[newId].frontier.add(ai);
+    }
+    // Neighbours of new owner's colour no longer border old territory — noop (stale entries ok)
+  }
+  markCellDirty(ci);
+}
+
+function claimCell(ent, ci) {
+  const oldId = gOwner[ci];
+  if (oldId === ent.id) return false;
+
+  const atkStr = ent.strBonus();
+
+  if (oldId === 0) {
+    gOwner[ci] = ent.id;
+    gStr[ci]   = 0.45 + Math.random() * 0.35;
+    ent.territory++;
+    onClaimed(ci, ent.id, 0);
+    maybeParticle(ci, ent.hue);
+    return true;
+  }
+
+  const def = entById[oldId];
+  if (!def) return false;
+  const defStr = def.strBonus() * gStr[ci];
+  if (Math.random() < atkStr / (atkStr + defStr)) {
+    def.territory--;
+    gOwner[ci] = ent.id;
+    gStr[ci]   = 0.35 + Math.random() * 0.2;
+    ent.territory++;
+    onClaimed(ci, ent.id, oldId);
+    maybeParticle(ci, ent.hue);
+    return true;
+  } else {
+    gStr[ci] = Math.max(0.25, gStr[ci] - 0.04);
+    markCellDirty(ci);
+    return false;
+  }
+}
+
+function rebuildFrontier(e) {
+  e.frontier.clear();
+  for (let y = 0; y < GH; y++) {
+    for (let x = 0; x < GW; x++) {
+      if (gOwner[idx(x, y)] !== e.id) continue;
+      for (const [dx, dy] of DIR4) {
+        const nx = x + dx, ny = y + dy;
+        if (inB(nx, ny) && gOwner[idx(nx, ny)] !== e.id) {
+          e.frontier.add(idx(nx, ny));
+        }
+      }
+    }
+  }
+}
+
+// ================================================================
+//  PARTICLES
+// ================================================================
+function maybeParticle(ci, hue) {
+  if (Math.random() > 0.25 || particles.length > 180) return;
+  const cx = (ci % GW + 0.5) * CPX;
+  const cy = ((ci / GW | 0) + 0.5) * CPX;
+  particles.push({
+    x: cx, y: cy,
+    vx: (Math.random() - 0.5) * 28,
+    vy: (Math.random() - 0.5) * 28 - 14,
+    hue, life: 1.0,
+    size: 2.5 + Math.random() * 2.5,
+  });
+}
+
+// ================================================================
+//  ENTITY SPAWN
+// ================================================================
+function spawnAt(e, cx, cy) {
+  e.rootX = cx; e.rootY = cy;
+  const R = 4;
+  for (let dy = -R; dy <= R; dy++) {
+    for (let dx = -R; dx <= R; dx++) {
+      if (dx * dx + dy * dy > R * R) continue;
+      const nx = cx + dx, ny = cy + dy;
+      if (!inB(nx, ny) || gOwner[idx(nx, ny)] !== 0) continue;
+      const ci = idx(nx, ny);
+      gOwner[ci] = e.id;
+      gStr[ci]   = 0.55 + Math.random() * 0.45;
+      e.territory++;
+      markCellDirty(ci);
+    }
+  }
+  rebuildFrontier(e);
+}
+
+function findSpawn() {
+  let bx = 10, by = 10, best = 0;
+  for (let a = 0; a < 25; a++) {
+    const tx = 10 + Math.floor(Math.random() * (GW - 20));
+    const ty = 10 + Math.floor(Math.random() * (GH - 20));
+    let emp = 0;
+    for (let dy = -8; dy <= 8; dy++) {
+      for (let dx = -8; dx <= 8; dx++) {
+        if (inB(tx + dx, ty + dy) && gOwner[idx(tx + dx, ty + dy)] === 0) emp++;
+      }
+    }
+    if (emp > best) { best = emp; bx = tx; by = ty; }
+  }
+  return [bx, by];
+}
+
+// ================================================================
+//  GAME TICK
+// ================================================================
+function gameTick() {
+  for (const e of entities) {
+    if (!e.alive) continue;
+    tickEntity(e);
+    if (e.territory <= 0) onEntityDied(e);
+  }
+  if (player && player.alive) score += Math.ceil(player.territory * 0.005);
+}
+
+function tickEntity(e) {
+  if (e.frontier.size === 0) return;
+
+  const rate = e.growthRate();
+  const frontArr = [...e.frontier];
+
+  // Prune obviously stale entries occasionally
+  if (Math.random() < 0.05) pruneFrontier(e, frontArr);
+
+  const picks = e.isBot
+    ? aiPick(e, frontArr, rate)
+    : playerPick(frontArr, rate);
+
+  for (const ci of picks) {
+    // Validate adjacency (frontier can be stale)
+    const cx = ci % GW, cy = (ci / GW) | 0;
+    let adj = false;
+    for (const [dx, dy] of DIR4) {
+      if (inB(cx + dx, cy + dy) && gOwner[idx(cx + dx, cy + dy)] === e.id) { adj = true; break; }
+    }
+    if (!adj) { e.frontier.delete(ci); continue; }
+    claimCell(e, ci);
+  }
+
+  // Spore anchors
+  for (const a of e.sporeAnchors) {
+    if (--a.life <= 0) continue;
+    const nearby = [...e.frontier].filter(ci => {
+      const ax = ci % GW - a.x, ay = (ci / GW | 0) - a.y;
+      return ax * ax + ay * ay < 100;
+    });
+    const sp = shuffle(nearby).slice(0, Math.ceil(rate / 2));
+    for (const ci of sp) claimCell(e, ci);
+  }
+  e.sporeAnchors = e.sporeAnchors.filter(a => a.life > 0);
+}
+
+function pruneFrontier(e, arr) {
+  for (const ci of arr) {
+    if (gOwner[ci] === e.id) e.frontier.delete(ci);
+  }
+}
+
+function playerPick(arr, n) {
+  if (!directing) return shuffle(arr).slice(0, n);
+  // Weight toward mouse grid position
+  const scored = arr.map(ci => {
+    const dx = (ci % GW) - mouseGX, dy = ((ci / GW) | 0) - mouseGY;
+    return { ci, w: 1 / (dx * dx + dy * dy + 0.5) };
+  });
+  scored.sort((a, b) => b.w - a.w);
+  return scored.slice(0, Math.min(n, scored.length)).map(s => s.ci);
+}
+
+function aiPick(e, arr, n) {
+  if (arr.length === 0) return [];
+  // Aggressive bots prefer enemy cells; passive prefer empty
+  const preferred = [], fallback = [];
+  for (const ci of arr) {
+    const o = gOwner[ci];
+    if ((e.aiAggro > 0.55 && o !== 0) || (e.aiAggro <= 0.55 && o === 0)) preferred.push(ci);
+    else fallback.push(ci);
+  }
+  const pool = shuffle([...preferred, ...fallback]);
+  // Bias toward ai target
+  if (e.aiTarget) {
+    pool.sort((a, b) => {
+      const ax = a % GW - e.aiTarget[0], ay = (a / GW | 0) - e.aiTarget[1];
+      const bx = b % GW - e.aiTarget[0], by = (b / GW | 0) - e.aiTarget[1];
+      return (ax * ax + ay * ay) - (bx * bx + by * by);
+    });
+  }
+  return pool.slice(0, n);
+}
+
+// ================================================================
+//  AI DECISIONS
+// ================================================================
+function aiThink(e) {
+  if (++e.aiTick % 4 !== 0) return;
+
+  // Set a wander target occasionally
+  if (Math.random() < 0.25) {
+    const dx = (Math.random() - 0.5) * 40, dy = (Math.random() - 0.5) * 40;
+    e.aiTarget = [Math.round(e.rootX + dx), Math.round(e.rootY + dy)];
+  }
+
+  // Spend sunlight on upgrades
+  if (++e.aiSpend % 10 === 0 && e.sunlight > 80) {
+    const priority = e.aiAggro > 0.6
+      ? ['power','speed','roots','leaves']
+      : ['speed','roots','power','leaves'];
+    for (const upId of priority) {
+      const def = UPGRADES.find(d => d.id === upId);
+      if (!def || def.isAbility) continue;
+      const lv = e[upId];
+      if (lv >= def.max) continue;
+      const cost = def.costs[lv];
+      if (e.sunlight >= cost) { e.sunlight -= cost; e[upId]++; break; }
+    }
+    // Try spore if rich
+    if (e.sunlight > 800 && Math.random() < 0.15) activateSpore(e);
+  }
+}
+
+// ================================================================
+//  INCOME
+// ================================================================
+function processIncome() {
+  for (const e of entities) {
+    if (!e.alive) continue;
+    e.sunlight += e.territory * 0.1 * e.incRate();
+  }
+}
+
+// ================================================================
+//  DEATHS & RESPAWNS
+// ================================================================
+function onEntityDied(e) {
+  e.alive = false;
+  e.territory = 0;
+  e.frontier.clear();
+  e.sporeAnchors = [];
+  if (!e.isBot) { stopGame(); showDeath(); return; }
+  setTimeout(() => respawnBot(e), 4000 + Math.random() * 6000);
+}
+
+function respawnBot(e) {
+  if (!gameRunning) return;
+  const [sx, sy] = findSpawn();
+  e.territory = 0; e.sunlight = 250; e.alive = true;
+  e.speed = 0; e.power = 0; e.roots = 0; e.leaves = 0;
+  e.sporeAnchors = []; e.frontier.clear();
+  spawnAt(e, sx, sy);
+}
+
+// ================================================================
+//  SPORE ABILITY
+// ================================================================
+function activateSpore(e) {
+  const [sx, sy] = findSpawn();
+  const R = 3;
+  for (let dy = -R; dy <= R; dy++) {
+    for (let dx = -R; dx <= R; dx++) {
+      if (dx * dx + dy * dy > R * R) continue;
+      const nx = sx + dx, ny = sy + dy;
+      if (!inB(nx, ny) || gOwner[idx(nx, ny)] !== 0) continue;
+      const ci = idx(nx, ny);
+      gOwner[ci] = e.id; gStr[ci] = 0.5 + Math.random() * 0.3;
+      e.territory++; onClaimed(ci, e.id, 0);
+    }
+  }
+  e.sporeAnchors.push({ x: sx, y: sy, life: 60 });
+  rebuildFrontier(e);
+  for (let i = 0; i < 12; i++) maybeParticle(idx(sx, sy), e.hue);
+}
+
+// ================================================================
+//  SHOP
+// ================================================================
+function buildShop() {
+  if (!player) return;
+  const grid = document.getElementById('upgGrid');
+  grid.innerHTML = UPGRADES.map(def => {
+    const lv       = player[def.id] ?? 0;
+    const cost     = def.isAbility ? def.fixedCost : (lv < def.max ? def.costs[lv] : null);
+    const maxed    = !def.isAbility && lv >= def.max;
+    const afford   = !maxed && player.sunlight >= cost;
+    const dots     = def.isAbility ? '' : Array.from({ length: def.max }, (_, i) =>
+      `<div class="dot${i < lv ? ' on' : ''}"></div>`).join('');
+    const costHtml = maxed
+      ? `<div class="upg-cost maxed-label">✓ MAXED</div>`
+      : `<div class="upg-cost">☀️ ${cost}${def.isAbility ? ' / use' : ''}</div>`;
+
+    return `<div class="upg-card${maxed ? ' maxed' : (!afford ? ' cant-afford' : '')}"
+                 onclick="window._buyUpg('${def.id}')">
+      <div class="upg-icon">${def.icon}</div>
+      <div class="upg-name">${def.name}</div>
+      <div class="upg-desc">${def.desc}</div>
+      <div class="upg-dots">${dots}</div>
+      ${costHtml}
+    </div>`;
+  }).join('');
+}
+
+window._buyUpg = function(id) {
+  if (!player || !player.alive) return;
+  const def = UPGRADES.find(d => d.id === id);
+  if (!def) return;
+  const lv   = player[id] ?? 0;
+  const cost = def.isAbility ? def.fixedCost : (lv < def.max ? def.costs[lv] : null);
+  if (cost === null) return;
+  if (player.sunlight < cost) return;
+  player.sunlight -= cost;
+  if (def.isAbility) {
+    activateSpore(player);
+  } else {
+    player[id]++;
+  }
+  buildShop();
+};
+
+// ================================================================
+//  RENDERING
+// ================================================================
+const canvas   = document.getElementById('gameCanvas');
+const ctx      = canvas.getContext('2d');
+const mmCanvas = document.getElementById('minimap');
+const mmCtx    = mmCanvas.getContext('2d');
+
+// Offscreen for the grid
+const offW = GW * CPX, offH = GH * CPX;
+const offscreen = new OffscreenCanvas(offW, offH);
+const offCtx    = offscreen.getContext('2d');
+let   imgData   = offCtx.createImageData(offW, offH);
+const imgBuf    = new Uint32Array(imgData.data.buffer); // ABGR on little-endian
+
+function initCellColors() {
+  for (let i = 0; i < CELLS; i++) markCellDirty(i);
+}
+
+function renderGrid() {
+  // Write cells into imgBuf (8x8 pixels each, with 1px gap)
+  for (let cy = 0; cy < GH; cy++) {
+    for (let cx = 0; cx < GW; cx++) {
+      const ci   = cy * GW + cx;
+      const col  = gRGB[ci];
+      const dark = 0xFF050D06 | 0; // gap colour (matches background)
+      for (let py = 0; py < CPX; py++) {
+        const isGapY = py === CPX - 1;
+        for (let px = 0; px < CPX; px++) {
+          const isGapX = px === CPX - 1;
+          imgBuf[(cy * CPX + py) * offW + (cx * CPX + px)] = (isGapX || isGapY) ? dark : col;
+        }
+      }
+    }
+  }
+  offCtx.putImageData(imgData, 0, 0);
+
+  // Root markers
+  for (const e of entities) {
+    if (!e.alive) continue;
+    const px = e.rootX * CPX + CPX / 2;
+    const py = e.rootY * CPX + CPX / 2;
+    offCtx.save();
+    offCtx.beginPath();
+    offCtx.arc(px, py, CPX * 1.6, 0, Math.PI * 2);
+    offCtx.strokeStyle = `hsla(${e.hue},75%,65%,.75)`;
+    offCtx.lineWidth = 1.5;
+    offCtx.stroke();
+    offCtx.restore();
+  }
+}
+
+function renderParticles() {
+  for (const p of particles) {
+    ctx.globalAlpha = p.life * 0.85;
+    ctx.fillStyle = `hsl(${p.hue},80%,60%)`;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function renderMinimap() {
+  const md = mmCtx.createImageData(150, 110);
+  const mb = new Uint32Array(md.data.buffer);
+  const scX = GW / 150, scY = GH / 110;
+  for (let py = 0; py < 110; py++) {
+    for (let px = 0; px < 150; px++) {
+      const ci = (py * scY | 0) * GW + (px * scX | 0);
+      mb[py * 150 + px] = gRGB[ci];
+    }
+  }
+  mmCtx.putImageData(md, 0, 0);
+  // Player dot
+  if (player && player.alive) {
+    const mx = player.rootX / GW * 150, my = player.rootY / GH * 110;
+    mmCtx.fillStyle = '#ffffff';
+    mmCtx.beginPath();
+    mmCtx.arc(mx, my, 2, 0, Math.PI * 2);
+    mmCtx.fill();
+  }
+}
+
+let prevT = 0;
+function frame(t) {
+  if (!gameRunning) return;
+  requestAnimationFrame(frame);
+  const dt = Math.min((t - prevT) / 1000, 0.05);
+  prevT = t;
+
+  // Smooth camera
+  if (player && player.alive) {
+    tgt.x = player.rootX * CPX + CPX / 2;
+    tgt.y = player.rootY * CPX + CPX / 2;
+  }
+  cam.x += (tgt.x - cam.x) * 0.08;
+  cam.y += (tgt.y - cam.y) * 0.08;
+  cam.z += (tgt.z - cam.z) * 0.1;
+
+  // Particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 28 * dt;
+    p.life -= dt * 2.2;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+
+  // Render
+  const W = canvas.width, H = canvas.height;
+  ctx.fillStyle = '#050d06';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.save();
+  ctx.translate(W / 2, H / 2);
+  ctx.scale(cam.z, cam.z);
+  ctx.translate(-cam.x, -cam.y);
+
+  renderGrid();
+  ctx.drawImage(offscreen, 0, 0);
+  renderParticles();
+
+  // Directing line
+  if (directing && player && player.alive) {
+    const px = player.rootX * CPX + CPX / 2;
+    const py = player.rootY * CPX + CPX / 2;
+    const mx = mouseGX  * CPX + CPX / 2;
+    const my = mouseGY  * CPX + CPX / 2;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(100,255,100,.35)';
+    ctx.lineWidth = 1; ctx.setLineDash([5, 5]);
+    ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(mx, my); ctx.stroke();
+    ctx.setLineDash([]); ctx.restore();
+  }
+
+  ctx.restore();
+  renderMinimap();
+  updateHUD();
+}
+
+// ================================================================
+//  HUD
+// ================================================================
+function updateHUD() {
+  if (!player) return;
+  document.getElementById('sunAmt').textContent  = Math.floor(player.sunlight).toLocaleString();
+  document.getElementById('terrPct').textContent = (player.territory / CELLS * 100).toFixed(1) + '%';
+  document.getElementById('scoreDisp').textContent = score.toLocaleString();
+
+  const alive = entities.filter(e => e.alive).sort((a, b) => b.territory - a.territory);
+  const rank  = alive.indexOf(player) + 1;
+  document.getElementById('rankDisp').textContent = player.alive ? `#${rank}` : '—';
+
+  const lbRows = document.getElementById('lbRows');
+  lbRows.innerHTML = alive.slice(0, 8).map(e =>
+    `<div class="lb-row">
+      <div class="lb-dot" style="background:hsl(${e.hue},60%,45%)"></div>
+      <div class="lb-name${e.id === 1 ? ' is-player' : ''}">${e.name}</div>
+      <div class="lb-score">${(e.territory / CELLS * 100).toFixed(1)}%</div>
+    </div>`
+  ).join('');
+}
+
+// ================================================================
+//  GAME INIT
+// ================================================================
+function initGame(playerName) {
+  // Reset grid
+  gOwner.fill(0); gStr.fill(0);
+  for (let i = 0; i < CELLS; i++) gShade[i] = (Math.random() - 0.5) * 0.3;
+  particles.length = 0;
+  score = 0;
+  entities = [];
+
+  // Player
+  player = new Entity(1, playerName || 'Seedling', false, PLR_HUE, 50);
+  entById[1] = player;
+  entities.push(player);
+
+  // Bots
+  for (let i = 0; i < NUM_BOTS; i++) {
+    const bot = new Entity(i + 2, BOT_NAMES[i], true, BOT_HUES[i], 200 + Math.random() * 200);
+    entById[i + 2] = bot;
+    entities.push(bot);
+  }
+
+  // Spawn all (in separate passes so they don't stomp each other instantly)
+  for (const e of entities) {
+    const [sx, sy] = findSpawn();
+    spawnAt(e, sx, sy);
+  }
+
+  initCellColors();
+
+  cam.x = tgt.x = player.rootX * CPX + CPX / 2;
+  cam.y = tgt.y = player.rootY * CPX + CPX / 2;
+  cam.z = tgt.z = 1.2;
+}
+
+function startGame(name) {
+  initGame(name);
+  gameRunning = true;
+
+  clearInterval(tickTimer);
+  clearInterval(incTimer);
+  clearInterval(aiTimer);
+
+  tickTimer = setInterval(gameTick, TICK_MS);
+  incTimer  = setInterval(processIncome, INCOME_MS);
+  aiTimer   = setInterval(() => {
+    for (const e of entities) if (e.isBot && e.alive) aiThink(e);
+  }, 250);
+
+  prevT = performance.now();
+  requestAnimationFrame(frame);
+}
+
+function stopGame() {
+  gameRunning = false;
+  clearInterval(tickTimer);
+  clearInterval(incTimer);
+  clearInterval(aiTimer);
+}
+
+function showDeath() {
+  document.getElementById('deathMsg').textContent =
+    `Your canopy withered! Final score: ${score.toLocaleString()} · Territory: ${(player.territory / CELLS * 100).toFixed(1)}%`;
+  document.getElementById('deathScreen').style.display = 'flex';
+}
+
+// ================================================================
+//  INPUT
+// ================================================================
+function screenToGrid(sx, sy) {
+  const wx = (sx - canvas.width  / 2) / cam.z + cam.x;
+  const wy = (sy - canvas.height / 2) / cam.z + cam.y;
+  return [wx / CPX, wy / CPX];
+}
+
+function resizeCanvas() {
+  canvas.width  = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+canvas.addEventListener('mousemove', e => {
+  const r = canvas.getBoundingClientRect();
+  [mouseGX, mouseGY] = screenToGrid(e.clientX - r.left, e.clientY - r.top);
+});
+canvas.addEventListener('mousedown', e => { if (e.button === 0) directing = true; });
+canvas.addEventListener('mouseup',   e => { if (e.button === 0) directing = false; });
+
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault(); directing = true;
+  const t = e.touches[0], r = canvas.getBoundingClientRect();
+  [mouseGX, mouseGY] = screenToGrid(t.clientX - r.left, t.clientY - r.top);
+}, { passive: false });
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const t = e.touches[0], r = canvas.getBoundingClientRect();
+  [mouseGX, mouseGY] = screenToGrid(t.clientX - r.left, t.clientY - r.top);
+}, { passive: false });
+canvas.addEventListener('touchend', () => { directing = false; });
+
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  tgt.z = Math.max(0.45, Math.min(3.5, tgt.z * (e.deltaY > 0 ? 0.88 : 1.14)));
+}, { passive: false });
+
+// Keyboard shortcut: U = toggle shop
+window.addEventListener('keydown', e => {
+  if (e.key === 'u' || e.key === 'U') {
+    shopOpen = !shopOpen;
+    document.getElementById('shopPanel').classList.toggle('open', shopOpen);
+    if (shopOpen) buildShop();
+  }
+});
+
+// Shop
+document.getElementById('shopBtn').addEventListener('click', () => {
+  shopOpen = !shopOpen;
+  document.getElementById('shopPanel').classList.toggle('open', shopOpen);
+  if (shopOpen) buildShop();
+});
+document.getElementById('closeShop').addEventListener('click', () => {
+  shopOpen = false;
+  document.getElementById('shopPanel').classList.remove('open');
+});
+
+document.getElementById('startBtn').addEventListener('click', () => {
+  const name = document.getElementById('nameInput').value.trim() || 'Seedling';
+  document.getElementById('startScreen').style.display = 'none';
+  startGame(name);
+});
+document.getElementById('respawnBtn').addEventListener('click', () => {
+  document.getElementById('deathScreen').style.display = 'none';
+  const name = player?.name || 'Seedling';
+  startGame(name);
+});
+document.getElementById('nameInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('startBtn').click();
+});
+
+// ================================================================
+//  UTILS
+// ================================================================
+function shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.random() * (i + 1) | 0;
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+</script>
+</body>
+</html>
