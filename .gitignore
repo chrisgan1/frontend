@@ -6,3 +6,4 @@ server/groove.db
 server/downloads/
 *.mp3
 .DS_Store
+screenshots/
