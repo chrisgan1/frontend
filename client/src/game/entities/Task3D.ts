@@ -8,8 +8,8 @@ const WHITE = new THREE.Color(0xffffff);
 export class Task3D {
   private group: THREE.Group;
   private ring: THREE.Mesh;
-  private ringMat: THREE.MeshStandardMaterial;
-  private fillMat: THREE.MeshStandardMaterial;
+  private ringMat: THREE.MeshLambertMaterial;
+  private fillMat: THREE.MeshLambertMaterial;
   private fillMesh: THREE.Mesh;
   private glowLight: THREE.PointLight;
 
@@ -18,7 +18,7 @@ export class Task3D {
 
     // Outer rotating ring
     const ringGeo = new THREE.TorusGeometry(24, 4, 8, 28);
-    this.ringMat = new THREE.MeshStandardMaterial({
+    this.ringMat = new THREE.MeshLambertMaterial({
       color: TEAL,
       emissive: TEAL,
       emissiveIntensity: 1.8,
@@ -30,7 +30,7 @@ export class Task3D {
 
     // Fill circle (progress indicator, grows from 0 opacity to 1)
     const fillGeo = new THREE.CircleGeometry(18, 24);
-    this.fillMat = new THREE.MeshStandardMaterial({
+    this.fillMat = new THREE.MeshLambertMaterial({
       color: WHITE,
       emissive: WHITE,
       emissiveIntensity: 1.5,

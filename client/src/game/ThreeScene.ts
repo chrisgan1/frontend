@@ -75,9 +75,8 @@ export class ThreeScene {
 
     // Ground platform
     const groundGeo = new THREE.PlaneGeometry(800, 600, 1, 1);
-    const groundMat = new THREE.MeshStandardMaterial({
-      color: 0x130d26,
-      roughness: 0.9,
+    const groundMat = new THREE.MeshLambertMaterial({
+      color: 0x1a1035,
     });
     const ground = new THREE.Mesh(groundGeo, groundMat);
     ground.rotation.x = -Math.PI / 2;
@@ -91,12 +90,12 @@ export class ThreeScene {
     this.scene.add(grid);
 
     // Platform edge glow strips
-    const edgeMat = new THREE.MeshStandardMaterial({
+    const edgeMat = new THREE.MeshLambertMaterial({
       color: 0x7c3aed,
       emissive: 0x7c3aed,
-      emissiveIntensity: 0.6,
+      emissiveIntensity: 1.0,
       transparent: true,
-      opacity: 0.4,
+      opacity: 0.6,
     });
     [
       [400, -3, 0,   800, 6, 8],

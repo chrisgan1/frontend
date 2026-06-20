@@ -6,7 +6,7 @@ import type { PlayerState } from '../../types/game';
 export class Player3D {
   private group: THREE.Group;
   private body: THREE.Mesh;
-  private bodyMat: THREE.MeshStandardMaterial;
+  private bodyMat: THREE.MeshLambertMaterial;
   private labelDiv: HTMLDivElement;
 
   constructor(scene: THREE.Scene, state: PlayerState, isLocal: boolean) {
@@ -16,12 +16,10 @@ export class Player3D {
 
     // Capsule body
     const bodyGeo = new THREE.CapsuleGeometry(14, 22, 4, 8);
-    this.bodyMat = new THREE.MeshStandardMaterial({
+    this.bodyMat = new THREE.MeshLambertMaterial({
       color,
       emissive: color,
-      emissiveIntensity: isLocal ? 1.2 : 0.8,
-      roughness: 0.4,
-      metalness: 0.1,
+      emissiveIntensity: isLocal ? 1.0 : 0.6,
     });
     this.body = new THREE.Mesh(bodyGeo, this.bodyMat);
     this.body.position.y = 25;
@@ -31,7 +29,7 @@ export class Player3D {
     // Local player glow ring
     if (isLocal) {
       const ringGeo = new THREE.TorusGeometry(20, 2.5, 6, 20);
-      const ringMat = new THREE.MeshStandardMaterial({
+      const ringMat = new THREE.MeshLambertMaterial({
         color,
         emissive: color,
         emissiveIntensity: 1.5,

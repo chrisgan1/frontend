@@ -16,7 +16,7 @@ const CORRUPT_EMISSIVE = new THREE.Color(0xdc2626);
 
 export class RoomObj3D {
   private group: THREE.Group;
-  private mat: THREE.MeshStandardMaterial;
+  private mat: THREE.MeshLambertMaterial;
   private normalColor: THREE.Color;
   private isCorrupted = false;
 
@@ -27,12 +27,10 @@ export class RoomObj3D {
     this.normalColor = col.clone();
 
     const geo = SHAPE_GEOS[shapeIndex % SHAPE_GEOS.length]();
-    this.mat = new THREE.MeshStandardMaterial({
+    this.mat = new THREE.MeshLambertMaterial({
       color: col,
       emissive: col,
       emissiveIntensity: 1.2,
-      roughness: 0.4,
-      metalness: 0.2,
     });
 
     const mesh = new THREE.Mesh(geo, this.mat);
