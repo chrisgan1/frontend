@@ -4,16 +4,15 @@ export default {
   theme: {
     extend: {
       colors: {
-        groove: {
-          green: '#1DB954',
-          'green-light': '#1ed760',
-          bg: '#121212',
-          surface: '#181818',
-          surface2: '#242424',
-          surface3: '#2a2a2a',
-          text: '#FFFFFF',
-          muted: '#B3B3B3',
-          subtle: '#6a6a6a',
+        dream: {
+          bg: '#0d0a1a',
+          surface: '#1a1429',
+          accent: '#7c3aed',
+          teal: '#06b6d4',
+          red: '#dc2626',
+          gold: '#f59e0b',
+          text: '#f3e8ff',
+          muted: '#a78bfa',
         },
       },
     },
