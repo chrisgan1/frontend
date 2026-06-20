@@ -71,7 +71,7 @@ export class ThreeScene {
   private setupScene() {
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x0d0a1a);
-    this.scene.fog = new THREE.FogExp2(0x0d0a1a, 0.006);
+    this.scene.fog = new THREE.FogExp2(0x0d0a1a, 0.0008);
 
     // Ground platform
     const groundGeo = new THREE.PlaneGeometry(800, 600, 1, 1);
