@@ -19,7 +19,7 @@ export class Player3D {
     this.bodyMat = new THREE.MeshStandardMaterial({
       color,
       emissive: color,
-      emissiveIntensity: isLocal ? 0.5 : 0.2,
+      emissiveIntensity: isLocal ? 1.2 : 0.8,
       roughness: 0.4,
       metalness: 0.1,
     });

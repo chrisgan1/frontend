@@ -42,7 +42,7 @@ export class ThreeScene {
   }
 
   private setupRenderer() {
-    this.renderer = new THREE.WebGLRenderer({ antialias: true });
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -86,7 +86,7 @@ export class ThreeScene {
     this.scene.add(ground);
 
     // Dreamy grid
-    const grid = new THREE.GridHelper(800, 16, 0x3b1f6e, 0x1e0f3a);
+    const grid = new THREE.GridHelper(800, 16, 0x7c3aed, 0x3b1f6e);
     grid.position.set(400, 1, 300);
     this.scene.add(grid);
 
@@ -117,21 +117,29 @@ export class ThreeScene {
   }
 
   private setupLighting() {
-    this.scene.add(new THREE.AmbientLight(0x1a0a2e, 2.5));
+    // Bright white base so MeshStandardMaterial colours show up
+    this.scene.add(new THREE.AmbientLight(0xffffff, 1.2));
+    // Dream-tinted fill
+    this.scene.add(new THREE.AmbientLight(0x4a2080, 1.8));
 
-    const sun = new THREE.DirectionalLight(0x9b59b6, 1.8);
+    const sun = new THREE.DirectionalLight(0xffd6ff, 2.5);
     sun.position.set(300, 500, 200);
     sun.castShadow = true;
     sun.shadow.mapSize.set(1024, 1024);
     this.scene.add(sun);
 
-    const teal = new THREE.PointLight(0x06b6d4, 2, 700);
+    const teal = new THREE.PointLight(0x06b6d4, 3, 800);
     teal.position.set(650, 220, 80);
     this.scene.add(teal);
 
-    const gold = new THREE.PointLight(0xf59e0b, 1.8, 500);
+    const gold = new THREE.PointLight(0xf59e0b, 2.5, 600);
     gold.position.set(150, 220, 520);
     this.scene.add(gold);
+
+    // Back fill light so objects are never completely dark
+    const back = new THREE.DirectionalLight(0x7c3aed, 1.2);
+    back.position.set(-300, 300, 400);
+    this.scene.add(back);
   }
 
   private setupInput() {
