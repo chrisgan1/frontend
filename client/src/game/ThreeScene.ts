@@ -58,12 +58,14 @@ export class ThreeScene {
   }
 
   private onResize = () => {
-    const w = this.container.clientWidth;
-    const h = this.container.clientHeight;
-    this.renderer.setSize(w, h);
-    this.css2dRenderer.setSize(w, h);
-    this.camera.aspect = w / h;
-    this.camera.updateProjectionMatrix();
+    const w = this.container.clientWidth || 1280;
+    const h = this.container.clientHeight || 720;
+    this.renderer?.setSize(w, h);
+    this.css2dRenderer?.setSize(w, h);
+    if (this.camera) {
+      this.camera.aspect = w / h;
+      this.camera.updateProjectionMatrix();
+    }
   };
 
   private setupScene() {
@@ -159,24 +161,11 @@ export class ThreeScene {
       useGameStore.getState().setGameState(state);
     });
 
-    socket.on('game-started', ({ role, gameState }: { role: 'figment' | 'nightmare'; gameState: GameState }) => {
+    // Initialise local player position when game starts (App.tsx handles phase/role)
+    socket.on('game-started', ({ gameState }: { role: 'figment' | 'nightmare'; gameState: GameState }) => {
       const myId = useGameStore.getState().myId;
       const me = gameState.players.find(p => p.id === myId);
       if (me) { this.localX = me.x; this.localY = me.y; }
-      useGameStore.getState().setMyRole(role);
-      useGameStore.getState().setGameState(gameState);
-    });
-
-    socket.on('round-end', () => {
-      useGameStore.getState().setPhase('round-end');
-    });
-
-    socket.on('game-over', (data: { winner: string; scores: object; nightmareId: string }) => {
-      const gs = useGameStore.getState().gameState;
-      if (gs) {
-        useGameStore.getState().setGameState({ ...gs, phase: 'game-over', ...(data as Partial<GameState>) });
-      }
-      useGameStore.getState().setPhase('game-over');
     });
   }
 
@@ -314,8 +303,6 @@ export class ThreeScene {
     this.cleanupInput?.();
     socket.off('game-state');
     socket.off('game-started');
-    socket.off('round-end');
-    socket.off('game-over');
     this.renderer.dispose();
     this.container.innerHTML = '';
   }

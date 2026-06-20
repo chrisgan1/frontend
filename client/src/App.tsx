@@ -11,6 +11,8 @@ import ResultsScreen from './components/ResultsScreen';
 export default function App() {
   const phase = useGameStore(s => s.phase);
   const setMyId = useGameStore(s => s.setMyId);
+  const setMyRole = useGameStore(s => s.setMyRole);
+  const setGameState = useGameStore(s => s.setGameState);
   const setStatus = useGameStore(s => s.setConnectionStatus);
 
   useEffect(() => {
@@ -19,13 +21,33 @@ export default function App() {
       setStatus('connected');
     };
     const onDisconnect = () => setStatus('disconnected');
+
+    // Must live here — ThreeScene isn't mounted yet when game-started fires
+    const onGameStarted = ({ role, gameState }: { role: 'figment' | 'nightmare'; gameState: Parameters<typeof setGameState>[0] }) => {
+      setMyRole(role);
+      setGameState(gameState);
+    };
+
+    const onRoundEnd = () => setGameState({ ...useGameStore.getState().gameState!, phase: 'round-end' });
+    const onGameOver = (data: { winner: string; scores: object; nightmareId: string }) => {
+      const gs = useGameStore.getState().gameState;
+      if (gs) setGameState({ ...gs, phase: 'game-over', ...data } as Parameters<typeof setGameState>[0]);
+    };
+
     socket.on('connect', onConnect);
     socket.on('disconnect', onDisconnect);
+    socket.on('game-started', onGameStarted);
+    socket.on('round-end', onRoundEnd);
+    socket.on('game-over', onGameOver);
+
     return () => {
       socket.off('connect', onConnect);
       socket.off('disconnect', onDisconnect);
+      socket.off('game-started', onGameStarted);
+      socket.off('round-end', onRoundEnd);
+      socket.off('game-over', onGameOver);
     };
-  }, [setMyId, setStatus]);
+  }, [setMyId, setMyRole, setGameState, setStatus]);
 
   const showCanvas = phase !== 'lobby';
 
