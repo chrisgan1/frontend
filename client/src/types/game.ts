@@ -1,41 +1,20 @@
-export type Role = 'figment' | 'nightmare';
-export type Phase = 'lobby' | 'role-reveal' | 'playing' | 'voting' | 'round-end' | 'game-over';
+export type Role = 'prop' | 'hunter';
+export type Phase = 'lobby' | 'role-reveal' | 'hiding' | 'hunting' | 'round-end' | 'game-over';
 
 export interface PlayerState {
   id: string;
   name: string;
   colorIndex: number;
+  role: Role | null;
   x: number;
   y: number;
+  z: number;
+  yaw: number;
   isAlive: boolean;
   isHost: boolean;
-}
-
-export interface TaskState {
-  id: string;
-  objectId: string;
-  x: number;
-  y: number;
-  isCorrupted: boolean;
-  isActive: boolean;
-  activePlayerId: string | null;
-  progressMs: number;
-  isComplete: boolean;
-}
-
-export interface RoomObjectState {
-  id: string;
-  x: number;
-  y: number;
-  label: string;
-  isCorrupted: boolean;
-}
-
-export interface VoteState {
-  targetId: string;
-  initiatorId: string;
-  votes: Record<string, string>;
-  expiresAt: number;
+  disguise: string | null;
+  movesLeft: number;
+  moveWindowEndAt: number;
 }
 
 export interface GameState {
@@ -43,12 +22,18 @@ export interface GameState {
   phase: Phase;
   roundNumber: number;
   players: PlayerState[];
-  objects: RoomObjectState[];
-  tasks: TaskState[];
-  coherence: number;
-  nightmareMeter: number;
-  roundEndsAt: number | null;
-  vote: VoteState | null;
-  scores: { figments: number; nightmare: number };
-  nightmareId?: string;
+  huntEndsAt: number | null;
+  hidingEndsAt: number | null;
+  scores: { hunters: number; props: number };
+  winner?: string | null;
+  propReveal?: Array<{
+    id: string;
+    name: string;
+    x: number;
+    z: number;
+    disguise: string | null;
+    survived: boolean;
+  }>;
+  props?: Array<{ id: string; name: string; colorIndex: number }>;
+  hunters?: Array<{ id: string; name: string; colorIndex: number }>;
 }

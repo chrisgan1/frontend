@@ -5,9 +5,10 @@ import LobbyUI from './components/LobbyUI';
 import GameCanvas from './components/GameCanvas';
 import GameHUD from './components/GameHUD';
 import RoleReveal from './components/RoleReveal';
-import VoteUI from './components/VoteUI';
 import ResultsScreen from './components/ResultsScreen';
 import TouchControls from './components/TouchControls';
+import DisguiseMenu from './components/DisguiseMenu';
+import type { GameState } from './types/game';
 
 export default function App() {
   const phase = useGameStore(s => s.phase);
@@ -17,27 +18,32 @@ export default function App() {
   const setStatus = useGameStore(s => s.setConnectionStatus);
 
   useEffect(() => {
-    const onConnect = () => {
-      setMyId(socket.id ?? '');
-      setStatus('connected');
-    };
+    const onConnect = () => { setMyId(socket.id ?? ''); setStatus('connected'); };
     const onDisconnect = () => setStatus('disconnected');
 
-    // Must live here — ThreeScene isn't mounted yet when game-started fires
-    const onGameStarted = ({ role, gameState }: { role: 'figment' | 'nightmare'; gameState: Parameters<typeof setGameState>[0] }) => {
+    const onGameStarted = ({ role, gameState }: { role: 'prop' | 'hunter'; gameState: GameState }) => {
       setMyRole(role);
       setGameState(gameState);
     };
 
-    const onRoundEnd = () => setGameState({ ...useGameStore.getState().gameState!, phase: 'round-end' });
-    const onGameOver = (data: { winner: string; scores: object; nightmareId: string }) => {
+    const onPhaseHiding = ({ gameState }: { gameState: GameState }) => setGameState(gameState);
+    const onPhaseHunting = ({ gameState }: { gameState: GameState }) => setGameState(gameState);
+
+    const onRoundEnd = (data: { winner: string | null; scores: { hunters: number; props: number }; propReveal: GameState['propReveal'] }) => {
       const gs = useGameStore.getState().gameState;
-      if (gs) setGameState({ ...gs, phase: 'game-over', ...data } as Parameters<typeof setGameState>[0]);
+      if (gs) setGameState({ ...gs, phase: 'round-end', ...data });
+    };
+
+    const onGameOver = (data: { winner: string | null; scores: { hunters: number; props: number }; props: GameState['props']; hunters: GameState['hunters'] }) => {
+      const gs = useGameStore.getState().gameState;
+      if (gs) setGameState({ ...gs, phase: 'game-over', ...data });
     };
 
     socket.on('connect', onConnect);
     socket.on('disconnect', onDisconnect);
     socket.on('game-started', onGameStarted);
+    socket.on('phase-hiding', onPhaseHiding);
+    socket.on('phase-hunting', onPhaseHunting);
     socket.on('round-end', onRoundEnd);
     socket.on('game-over', onGameOver);
 
@@ -45,33 +51,35 @@ export default function App() {
       socket.off('connect', onConnect);
       socket.off('disconnect', onDisconnect);
       socket.off('game-started', onGameStarted);
+      socket.off('phase-hiding', onPhaseHiding);
+      socket.off('phase-hunting', onPhaseHunting);
       socket.off('round-end', onRoundEnd);
       socket.off('game-over', onGameOver);
     };
   }, [setMyId, setMyRole, setGameState, setStatus]);
 
   const showCanvas = phase !== 'lobby';
+  const showHUD = phase === 'hiding' || phase === 'hunting';
 
   return (
-    <div className="w-screen h-screen bg-dream-bg overflow-hidden relative" style={{ touchAction: 'none' }}>
+    <div className="w-screen h-screen bg-black overflow-hidden relative" style={{ touchAction: 'none' }}>
       {phase === 'lobby' && <LobbyUI />}
 
-      {/* Canvas mounts once when game starts, stays alive through rounds */}
       {showCanvas && (
         <div className="absolute inset-0">
           <GameCanvas />
         </div>
       )}
 
-      {(phase === 'playing' || phase === 'voting' || phase === 'role-reveal') && (
+      {showHUD && (
         <div className="absolute inset-0 z-10 pointer-events-none">
           <GameHUD />
         </div>
       )}
 
-      <TouchControls />
+      {showCanvas && <TouchControls />}
       {phase === 'role-reveal' && <RoleReveal />}
-      {phase === 'voting' && <VoteUI />}
+      <DisguiseMenu />
       {(phase === 'round-end' || phase === 'game-over') && <ResultsScreen />}
     </div>
   );

@@ -19,8 +19,8 @@ app.get('*', (_req, res) => {
 const httpServer = http.createServer(app);
 const io = new Server(httpServer, { cors: { origin: '*' } });
 
-const rooms = new Map();       // roomCode → GameRoom
-const socketRooms = new Map(); // socketId → roomCode
+const rooms = new Map();
+const socketRooms = new Map();
 
 function generateRoomCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -38,12 +38,8 @@ io.on('connection', (socket) => {
 
   socket.on('join-room', ({ roomCode, playerName }) => {
     const code = roomCode ? roomCode.toUpperCase().trim() : generateRoomCode();
-
-    if (!rooms.has(code)) {
-      rooms.set(code, new GameRoom(code, io));
-    }
+    if (!rooms.has(code)) rooms.set(code, new GameRoom(code, io));
     const room = rooms.get(code);
-
     if (room.addPlayer(socket, playerName)) {
       socketRooms.set(socket.id, code);
       console.log(`[~] ${playerName} joined room ${code} (${room.players.size} players)`);
@@ -51,49 +47,32 @@ io.on('connection', (socket) => {
   });
 
   socket.on('start-game', () => {
-    const room = rooms.get(socketRooms.get(socket.id));
-    room?.startGame(socket.id);
+    rooms.get(socketRooms.get(socket.id))?.startGame(socket.id);
   });
 
-  socket.on('player-move', ({ x, y }) => {
-    const room = rooms.get(socketRooms.get(socket.id));
-    room?.handlePlayerMove(socket.id, x, y);
+  socket.on('player-move', ({ x, z, yaw }) => {
+    rooms.get(socketRooms.get(socket.id))?.handlePlayerMove(socket.id, x, z, yaw);
   });
 
-  socket.on('start-task', ({ taskId }) => {
-    const room = rooms.get(socketRooms.get(socket.id));
-    room?.handleStartTask(socket.id, taskId);
+  socket.on('prop-use-move', () => {
+    rooms.get(socketRooms.get(socket.id))?.handlePropUseMove(socket.id);
   });
 
-  socket.on('complete-task', ({ taskId }) => {
-    const room = rooms.get(socketRooms.get(socket.id));
-    room?.handleCompleteTask(socket.id, taskId);
+  socket.on('prop-disguise', ({ typeId }) => {
+    rooms.get(socketRooms.get(socket.id))?.handleDisguise(socket.id, typeId);
   });
 
-  socket.on('cancel-task', () => {
-    const room = rooms.get(socketRooms.get(socket.id));
-    room?.handleCancelTask(socket.id);
+  socket.on('prop-taunt', () => {
+    rooms.get(socketRooms.get(socket.id))?.handleTaunt(socket.id);
   });
 
-  socket.on('corrupt-object', ({ objectId }) => {
-    const room = rooms.get(socketRooms.get(socket.id));
-    room?.handleCorruptObject(socket.id, objectId);
-  });
-
-  socket.on('call-vote', ({ targetId }) => {
-    const room = rooms.get(socketRooms.get(socket.id));
-    room?.handleCallVote(socket.id, targetId);
-  });
-
-  socket.on('cast-vote', ({ targetId }) => {
-    const room = rooms.get(socketRooms.get(socket.id));
-    room?.handleCastVote(socket.id, targetId);
+  socket.on('player-shoot', ({ targetPropId }) => {
+    rooms.get(socketRooms.get(socket.id))?.handleShoot(socket.id, targetPropId ?? null);
   });
 
   socket.on('disconnect', () => {
     const code = socketRooms.get(socket.id);
     socketRooms.delete(socket.id);
-
     if (code) {
       const room = rooms.get(code);
       if (room) {
@@ -101,16 +80,15 @@ io.on('connection', (socket) => {
         if (room.players.size === 0) {
           room.destroy();
           rooms.delete(code);
-          console.log(`[-] Room ${code} empty, removed`);
+          console.log(`[-] Room ${code} removed`);
         }
       }
     }
-
     console.log(`[-] ${socket.id} disconnected`);
   });
 });
 
 const PORT = process.env.PORT || 3001;
 httpServer.listen(PORT, () => {
-  console.log(`Fever Dream server on port ${PORT}`);
+  console.log(`Prop Hunt server on port ${PORT}`);
 });

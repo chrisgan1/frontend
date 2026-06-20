@@ -10,57 +10,86 @@ export default function ResultsScreen() {
   if (!gameState) return null;
 
   if (phase === 'round-end') {
-    const roundWinner = gameState.scores.figments > gameState.scores.nightmare ? 'figments' : 'nightmare';
+    const { winner, scores, propReveal } = gameState;
     return (
-      <div className="absolute inset-0 flex items-center justify-center z-20 bg-dream-bg/80 backdrop-blur-sm pointer-events-none">
-        <div className="text-center">
-          <div className="text-6xl mb-4">{roundWinner === 'figments' ? '✨' : '😈'}</div>
-          <div className={`text-3xl font-bold mb-2 ${roundWinner === 'figments' ? 'text-dream-teal' : 'text-dream-red'}`}>
-            {roundWinner === 'figments' ? 'Figments win this round!' : 'Nightmare wins this round!'}
+      <div className="absolute inset-0 flex items-center justify-center z-20 bg-black/80 backdrop-blur-sm pointer-events-none">
+        <div className="text-center max-w-md w-full mx-4">
+          <div className="text-6xl mb-4">{winner === 'hunters' ? '🔫' : '📦'}</div>
+          <div className={`text-3xl font-bold mb-2 ${winner === 'hunters' ? 'text-dream-red' : 'text-dream-teal'}`}>
+            {winner === 'hunters' ? 'Hunters Win!' : winner === 'props' ? 'Props Survive!' : 'Draw!'}
           </div>
-          <div className="text-dream-muted mt-2 text-lg">
-            {gameState.scores.figments} – {gameState.scores.nightmare}
+          <div className="text-dream-muted mb-4">
+            Hunters {scores.hunters} · Props {scores.props}
           </div>
-          <div className="text-dream-muted/60 text-sm mt-1">Next round starting…</div>
+
+          {propReveal && propReveal.length > 0 && (
+            <div className="bg-dream-surface/80 border border-dream-accent/20 rounded-xl p-4 text-left space-y-2">
+              <div className="text-dream-muted text-xs font-bold uppercase tracking-widest mb-2">Props were…</div>
+              {propReveal.map(p => (
+                <div key={p.id} className="flex items-center gap-2 text-sm">
+                  <span className={p.survived ? 'text-dream-teal' : 'text-dream-red'}>
+                    {p.survived ? '✓' : '✗'}
+                  </span>
+                  <span className="text-dream-text">{p.name}</span>
+                  {p.disguise && (
+                    <span className="text-dream-muted text-xs">as {p.disguise}</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="text-dream-muted/60 text-sm mt-4">Next round starting…</div>
         </div>
       </div>
     );
   }
 
   // Game over
-  const nightmarePlayer = gameState.players.find(p => p.id === gameState.nightmareId);
-  const figmentsWon = gameState.scores.figments > gameState.scores.nightmare;
+  const { winner, scores, props: propList, hunters: hunterList } = gameState;
+  const huntersWon = winner === 'hunters';
 
   const handlePlayAgain = () => {
     const me = gameState.players.find(p => p.id === myId);
-    joinRoom(gameState.roomCode, me?.name || 'Figment');
+    joinRoom(gameState.roomCode, me?.name || 'Player');
     useGameStore.getState().reset();
   };
 
   return (
-    <div className="absolute inset-0 flex items-center justify-center z-20 bg-dream-bg/90 backdrop-blur-sm">
+    <div className="absolute inset-0 flex items-center justify-center z-20 bg-black/90 backdrop-blur-sm">
       <div className="bg-dream-surface border border-dream-accent/40 rounded-2xl p-10 max-w-md w-full mx-4 text-center shadow-2xl">
-        <div className="text-6xl mb-4">{figmentsWon ? '🌟' : '💀'}</div>
-        <div className={`text-3xl font-bold mb-2 ${figmentsWon ? 'text-dream-teal' : 'text-dream-red'}`}>
-          {figmentsWon ? 'FIGMENTS WIN' : 'NIGHTMARE WINS'}
+        <div className="text-6xl mb-4">{huntersWon ? '🏆' : '🎉'}</div>
+        <div className={`text-3xl font-bold mb-2 ${huntersWon ? 'text-dream-red' : 'text-dream-teal'}`}>
+          {huntersWon ? 'HUNTERS WIN' : 'PROPS WIN'}
         </div>
 
-        {nightmarePlayer && (
-          <div className="my-6 p-4 rounded-xl bg-dream-bg/60 border border-dream-red/30">
-            <div className="text-dream-muted text-xs uppercase tracking-widest mb-2">The Nightmare was…</div>
-            <div className="flex items-center justify-center gap-2 text-xl font-bold text-dream-red">
-              <div
-                className="w-4 h-4 rounded-full"
-                style={{ backgroundColor: PLAYER_COLORS[nightmarePlayer.colorIndex] }}
-              />
-              {nightmarePlayer.name}
-            </div>
+        <div className="text-dream-muted mb-6 text-sm">
+          Final — Hunters {scores.hunters} · Props {scores.props}
+        </div>
+
+        {hunterList && hunterList.length > 0 && (
+          <div className="mb-4 p-3 rounded-xl bg-dream-bg/50 border border-dream-red/20">
+            <div className="text-dream-red text-xs uppercase tracking-widest mb-2">Hunters</div>
+            {hunterList.map(p => (
+              <div key={p.id} className="flex items-center justify-center gap-2 text-sm text-dream-text">
+                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: PLAYER_COLORS[p.colorIndex] }} />
+                {p.name}
+              </div>
+            ))}
           </div>
         )}
 
-        <div className="text-dream-muted mb-8 text-sm">
-          Final score — Figments {gameState.scores.figments} · Nightmare {gameState.scores.nightmare}
-        </div>
+        {propList && propList.length > 0 && (
+          <div className="mb-6 p-3 rounded-xl bg-dream-bg/50 border border-dream-teal/20">
+            <div className="text-dream-teal text-xs uppercase tracking-widest mb-2">Props</div>
+            {propList.map(p => (
+              <div key={p.id} className="flex items-center justify-center gap-2 text-sm text-dream-text">
+                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: PLAYER_COLORS[p.colorIndex] }} />
+                {p.name}
+              </div>
+            ))}
+          </div>
+        )}
 
         <button
           onClick={handlePlayAgain}

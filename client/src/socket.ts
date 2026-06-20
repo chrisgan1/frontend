@@ -7,22 +7,15 @@ export const joinRoom = (roomCode: string, playerName: string) =>
 
 export const startGame = () => socket.emit('start-game');
 
-export const movePlayer = (x: number, y: number) =>
-  socket.emit('player-move', { x, y });
+export const movePlayer = (x: number, z: number, yaw: number) =>
+  socket.emit('player-move', { x, z, yaw });
 
-export const startTask = (taskId: string) =>
-  socket.emit('start-task', { taskId });
+export const propUseMove = () => socket.emit('prop-use-move');
 
-export const completeTask = (taskId: string) =>
-  socket.emit('complete-task', { taskId });
+export const setPropDisguise = (typeId: string) =>
+  socket.emit('prop-disguise', { typeId });
 
-export const cancelTask = () => socket.emit('cancel-task');
+export const propTaunt = () => socket.emit('prop-taunt');
 
-export const corruptObject = (objectId: string) =>
-  socket.emit('corrupt-object', { objectId });
-
-export const callVote = (targetId: string) =>
-  socket.emit('call-vote', { targetId });
-
-export const castVote = (targetId: string) =>
-  socket.emit('cast-vote', { targetId });
+export const shootAt = (targetPropId: string | null) =>
+  socket.emit('player-shoot', { targetPropId });

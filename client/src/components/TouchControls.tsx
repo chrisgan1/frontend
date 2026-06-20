@@ -1,108 +1,147 @@
 import { useRef, useCallback } from 'react';
 import { useGameStore } from '../store/useGameStore';
+import { touchState } from '../game/touchState';
 
-function fire(key: string) {
-  document.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
-}
-function release(key: string) {
-  document.dispatchEvent(new KeyboardEvent('keyup', { key, bubbles: true }));
-}
-
-const DIRS: [string, string][] = [
-  ['ArrowUp', 'ArrowRight'], ['ArrowRight', 'ArrowDown'],
-  ['ArrowDown', 'ArrowLeft'], ['ArrowLeft', 'ArrowUp'],
-];
-const MOVE_KEYS = ['ArrowUp', 'ArrowRight', 'ArrowDown', 'ArrowLeft'];
+const DEAD_ZONE = 12;
+const LOOK_SENSITIVITY = 0.004;
+const TAP_MOVE_THRESHOLD = 8;
 
 export default function TouchControls() {
   const phase = useGameStore(s => s.phase);
   const myRole = useGameStore(s => s.myRole);
-  const activeKeys = useRef(new Set<string>());
-  const joystickBase = useRef<{ x: number; y: number } | null>(null);
 
-  const setKeys = useCallback((newKeys: Set<string>) => {
-    for (const k of MOVE_KEYS) {
-      if (newKeys.has(k) && !activeKeys.current.has(k)) fire(k);
-      if (!newKeys.has(k) && activeKeys.current.has(k)) release(k);
-    }
-    activeKeys.current = new Set(newKeys);
-  }, []);
+  const joyBase = useRef<{ x: number; y: number } | null>(null);
+  const lookLast = useRef<{ x: number; y: number; moved: boolean } | null>(null);
 
-  const handleJoyMove = useCallback((cx: number, cy: number) => {
-    const base = joystickBase.current;
-    if (!base) return;
-    const dx = cx - base.x;
-    const dy = cy - base.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    if (dist < 12) { setKeys(new Set()); return; }
-
-    const angle = Math.atan2(dy, dx); // -π to π, right=0
-    // Map angle to 8-direction bitmask: up=-π/2, right=0, down=π/2, left=±π
-    const next = new Set<string>();
-    const deg = ((angle * 180 / Math.PI) + 360) % 360; // 0=right, clockwise
-    if (deg < 67.5 || deg >= 292.5) next.add('ArrowRight');
-    if (deg >= 22.5 && deg < 157.5) next.add('ArrowDown');
-    if (deg >= 112.5 && deg < 247.5) next.add('ArrowLeft');
-    if (deg >= 202.5 && deg < 337.5) next.add('ArrowUp');
-    setKeys(next);
-  }, [setKeys]);
-
-  const onJoyStart = useCallback((e: React.PointerEvent) => {
+  const onJoyDown = useCallback((e: React.PointerEvent) => {
     e.currentTarget.setPointerCapture(e.pointerId);
     const rect = e.currentTarget.getBoundingClientRect();
-    joystickBase.current = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
-    handleJoyMove(e.clientX, e.clientY);
-  }, [handleJoyMove]);
+    joyBase.current = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+  }, []);
 
   const onJoyMove = useCallback((e: React.PointerEvent) => {
-    if (!joystickBase.current) return;
-    handleJoyMove(e.clientX, e.clientY);
-  }, [handleJoyMove]);
+    if (!joyBase.current) return;
+    const dx = e.clientX - joyBase.current.x;
+    const dy = e.clientY - joyBase.current.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < DEAD_ZONE) {
+      touchState.moveDx = 0;
+      touchState.moveDz = 0;
+      return;
+    }
+    const norm = Math.min(dist, 60) / 60;
+    touchState.moveDx = (dx / dist) * norm;
+    touchState.moveDz = (dy / dist) * norm;
+  }, []);
 
   const onJoyEnd = useCallback(() => {
-    joystickBase.current = null;
-    setKeys(new Set());
-  }, [setKeys]);
+    joyBase.current = null;
+    touchState.moveDx = 0;
+    touchState.moveDz = 0;
+  }, []);
 
-  if (phase !== 'playing') return null;
+  const onLookDown = useCallback((e: React.PointerEvent) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    lookLast.current = { x: e.clientX, y: e.clientY, moved: false };
+  }, []);
 
-  const actionKey = myRole === 'nightmare' ? 'f' : 'e';
-  const actionLabel = myRole === 'nightmare' ? 'CORRUPT\n(F)' : 'TASK\n(E)';
-  const actionColor = myRole === 'nightmare' ? 'bg-dream-red' : 'bg-dream-teal';
+  const onLookMove = useCallback((e: React.PointerEvent) => {
+    if (!lookLast.current) return;
+    const dx = e.clientX - lookLast.current.x;
+    const dy = e.clientY - lookLast.current.y;
+    if (Math.abs(dx) > TAP_MOVE_THRESHOLD || Math.abs(dy) > TAP_MOVE_THRESHOLD) {
+      lookLast.current.moved = true;
+    }
+    touchState.lookYaw += dx * LOOK_SENSITIVITY;
+    touchState.lookPitch += dy * LOOK_SENSITIVITY;
+    lookLast.current.x = e.clientX;
+    lookLast.current.y = e.clientY;
+  }, []);
+
+  const onLookUp = useCallback(() => {
+    if (lookLast.current && !lookLast.current.moved) {
+      // It was a tap — trigger shoot
+      touchState.shoot = true;
+    }
+    lookLast.current = null;
+  }, []);
+
+  if (phase !== 'hiding' && phase !== 'hunting') return null;
+
+  const isProp = myRole === 'prop';
+  const isHunter = myRole === 'hunter';
+  const showButtons = isProp && phase === 'hunting';
 
   return (
     <div
       className="absolute inset-0 pointer-events-none select-none"
       style={{ zIndex: 25, touchAction: 'none' }}
     >
-      {/* Joystick — bottom left */}
-      <div className="absolute bottom-28 left-6 pointer-events-auto">
-        <div
-          className="rounded-full border-2 border-white/20 bg-black/30 backdrop-blur-sm flex items-center justify-center cursor-pointer"
-          style={{ width: 120, height: 120, touchAction: 'none' }}
-          onPointerDown={onJoyStart}
-          onPointerMove={onJoyMove}
-          onPointerUp={onJoyEnd}
-          onPointerCancel={onJoyEnd}
-        >
-          <div className="rounded-full bg-white/40 border border-white/60" style={{ width: 44, height: 44 }} />
+      {/* Left half — joystick */}
+      <div
+        className="absolute left-0 top-0 w-1/2 h-full pointer-events-auto"
+        style={{ touchAction: 'none' }}
+        onPointerDown={onJoyDown}
+        onPointerMove={onJoyMove}
+        onPointerUp={onJoyEnd}
+        onPointerCancel={onJoyEnd}
+      >
+        {/* Joystick visual */}
+        <div className="absolute bottom-24 left-8 pointer-events-none">
+          <div
+            className="rounded-full border-2 border-white/20 bg-black/30 backdrop-blur-sm flex items-center justify-center"
+            style={{ width: 110, height: 110 }}
+          >
+            <div className="rounded-full bg-white/35 border border-white/50" style={{ width: 42, height: 42 }} />
+          </div>
+          <p className="text-center text-white/35 text-xs mt-1">move</p>
         </div>
-        <p className="text-center text-white/40 text-xs mt-1">move</p>
       </div>
 
-      {/* Action button — bottom right */}
-      <div className="absolute bottom-28 right-6 pointer-events-auto">
-        <button
-          className={`rounded-full ${actionColor}/80 border-2 border-white/30 text-white font-bold text-xs flex items-center justify-center backdrop-blur-sm active:scale-95`}
-          style={{ width: 88, height: 88, touchAction: 'none', whiteSpace: 'pre-line', lineHeight: 1.3 }}
-          onPointerDown={() => fire(actionKey)}
-          onPointerUp={() => release(actionKey)}
-          onPointerCancel={() => release(actionKey)}
-          onPointerLeave={() => release(actionKey)}
-        >
-          {actionLabel}
-        </button>
+      {/* Right half — look / shoot */}
+      <div
+        className="absolute right-0 top-0 w-1/2 h-full pointer-events-auto"
+        style={{ touchAction: 'none' }}
+        onPointerDown={onLookDown}
+        onPointerMove={onLookMove}
+        onPointerUp={onLookUp}
+        onPointerCancel={onLookUp}
+      >
+        {isHunter && phase === 'hunting' && (
+          <div className="absolute bottom-6 right-6 pointer-events-none">
+            <div className="rounded-full bg-dream-red/30 border-2 border-dream-red/60 w-16 h-16 flex items-center justify-center text-white text-xs font-bold">
+              SHOOT
+            </div>
+          </div>
+        )}
       </div>
+
+      {/* Prop action buttons */}
+      {showButtons && (
+        <div className="absolute bottom-6 right-6 flex flex-col gap-3 pointer-events-auto" style={{ zIndex: 30 }}>
+          <button
+            className="rounded-full bg-dream-gold/80 border-2 border-dream-gold text-black font-bold text-xs w-16 h-16 active:scale-95 transition-transform"
+            onPointerDown={e => { e.stopPropagation(); touchState.taunt = true; }}
+          >
+            TAUNT
+          </button>
+          <button
+            className="rounded-full bg-dream-teal/80 border-2 border-dream-teal text-black font-bold text-xs w-16 h-16 active:scale-95 transition-transform"
+            onPointerDown={e => { e.stopPropagation(); touchState.useMove = true; }}
+          >
+            RUSH
+          </button>
+          <button
+            className="rounded-full bg-dream-accent/80 border-2 border-dream-accent text-white font-bold text-xs w-16 h-16 active:scale-95 transition-transform"
+            onPointerDown={e => {
+              e.stopPropagation();
+              useGameStore.getState().setShowDisguiseMenu(true);
+            }}
+          >
+            HIDE
+          </button>
+        </div>
+      )}
     </div>
   );
 }

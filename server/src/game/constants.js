@@ -1,40 +1,73 @@
 const PLAYER_COLORS = [
-  '#7c3aed', // purple
-  '#06b6d4', // teal
-  '#f59e0b', // gold
-  '#10b981', // emerald
-  '#f43f5e', // rose
-  '#3b82f6', // blue
-  '#a855f7', // violet
-  '#14b8a6', // cyan
+  '#7c3aed', '#06b6d4', '#f59e0b', '#10b981',
+  '#f43f5e', '#3b82f6', '#a855f7', '#14b8a6',
 ];
 
-const ROOM_OBJECTS = [
-  { id: 'obj1', x: 150, y: 110, label: 'Upside-Down Clock' },
-  { id: 'obj2', x: 400, y: 80,  label: 'Screaming Couch' },
-  { id: 'obj3', x: 650, y: 120, label: 'Floating Teapot' },
-  { id: 'obj4', x: 120, y: 330, label: 'Melting Bookshelf' },
-  { id: 'obj5', x: 400, y: 300, label: 'Infinite Staircase' },
-  { id: 'obj6', x: 680, y: 320, label: 'Mirror of Nothing' },
-  { id: 'obj7', x: 180, y: 510, label: 'Whispering Door' },
-  { id: 'obj8', x: 620, y: 490, label: 'Backwards Piano' },
+const PROP_TYPES = [
+  { id: 'crate',    label: 'Wooden Crate',   shape: 'box',      w: 1.5, h: 1.5, d: 1.5 },
+  { id: 'barrel',   label: 'Barrel',         shape: 'cylinder', r: 0.55, h: 1.4 },
+  { id: 'chair',    label: 'Chair',          shape: 'box',      w: 0.8, h: 1.2, d: 0.8 },
+  { id: 'table',    label: 'Table',          shape: 'box',      w: 2.0, h: 0.9, d: 1.0 },
+  { id: 'shelf',    label: 'Bookshelf',      shape: 'box',      w: 1.2, h: 3.2, d: 0.4 },
+  { id: 'tv',       label: 'Television',     shape: 'box',      w: 2.0, h: 1.2, d: 0.25 },
+  { id: 'sofa',     label: 'Sofa',           shape: 'box',      w: 2.5, h: 1.0, d: 1.0 },
+  { id: 'plant',    label: 'Plant Pot',      shape: 'cylinder', r: 0.45, h: 1.3 },
+  { id: 'cabinet',  label: 'Filing Cabinet', shape: 'box',      w: 0.6, h: 2.0, d: 0.5 },
+  { id: 'locker',   label: 'Locker',         shape: 'box',      w: 0.9, h: 2.5, d: 0.5 },
+  { id: 'smallbox', label: 'Small Box',      shape: 'box',      w: 0.8, h: 0.8, d: 0.8 },
+  { id: 'pc',       label: 'Desktop PC',     shape: 'box',      w: 0.5, h: 1.5, d: 0.4 },
+];
+
+const SCENE_OBJECTS = [
+  { id: 'so1',  typeId: 'shelf',    x: 0.4,  z: 4.0  },
+  { id: 'so2',  typeId: 'shelf',    x: 0.4,  z: 10.0 },
+  { id: 'so3',  typeId: 'crate',    x: 3.0,  z: 2.0  },
+  { id: 'so4',  typeId: 'crate',    x: 5.0,  z: 2.0  },
+  { id: 'so5',  typeId: 'barrel',   x: 14.5, z: 2.0  },
+  { id: 'so6',  typeId: 'barrel',   x: 16.0, z: 2.0  },
+  { id: 'so7',  typeId: 'table',    x: 10.0, z: 10.0 },
+  { id: 'so8',  typeId: 'chair',    x: 8.5,  z: 9.5  },
+  { id: 'so9',  typeId: 'chair',    x: 11.5, z: 9.5  },
+  { id: 'so10', typeId: 'sofa',     x: 10.0, z: 17.5 },
+  { id: 'so11', typeId: 'plant',    x: 1.0,  z: 18.5 },
+  { id: 'so12', typeId: 'plant',    x: 19.0, z: 18.5 },
+  { id: 'so13', typeId: 'cabinet',  x: 19.4, z: 5.0  },
+  { id: 'so14', typeId: 'cabinet',  x: 19.4, z: 6.5  },
+  { id: 'so15', typeId: 'locker',   x: 19.4, z: 12.0 },
+  { id: 'so16', typeId: 'locker',   x: 19.4, z: 13.5 },
+  { id: 'so17', typeId: 'smallbox', x: 4.0,  z: 17.5 },
+  { id: 'so18', typeId: 'smallbox', x: 16.0, z: 17.5 },
+  { id: 'so19', typeId: 'pc',       x: 5.0,  z: 5.0  },
+  { id: 'so20', typeId: 'smallbox', x: 7.0,  z: 14.0 },
+];
+
+const PROP_SPAWNS = [
+  { x: 10, z: 10 }, { x: 6,  z: 8  }, { x: 14, z: 8  },
+  { x: 8,  z: 14 }, { x: 12, z: 14 }, { x: 6,  z: 16 },
+  { x: 14, z: 16 }, { x: 10, z: 6  },
+];
+
+const HUNTER_SPAWNS = [
+  { x: 10, z: 1.5 }, { x: 8, z: 1.5 }, { x: 12, z: 1.5 },
 ];
 
 module.exports = {
   ROOM_CODE_LENGTH: 4,
   MAX_PLAYERS: 8,
   MIN_PLAYERS: 2,
-  ROUND_DURATION_MS: 90_000,
-  VOTE_DURATION_MS: 30_000,
-  TASK_HOLD_MS: 2000,
-  COHERENCE_PER_TASK: 12,
-  NIGHTMARE_PER_CORRUPT: 15,
-  COHERENCE_PENALTY_WRONG_VOTE: 15,
-  GAME_STATE_TICK_MS: 100,
-  TASK_SPAWN_INTERVAL_MS: 12_000,
-  MAX_SIMULTANEOUS_TASKS: 3,
+  GAME_STATE_TICK_MS: 80,
+  HIDING_DURATION_MS: 30_000,
+  HUNTING_DURATION_MS: 180_000,
   ROUNDS_TO_WIN: 2,
-  INTERACTION_RADIUS: 80,
+  PROP_MOVES_PER_ROUND: 3,
+  MOVE_WINDOW_MS: 3_000,
+  TAUNT_COOLDOWN_MS: 15_000,
+  SHOOT_MAX_RANGE: 30,
+  ROOM_SIZE: 20,
+  ROOM_HEIGHT: 4,
   PLAYER_COLORS,
-  ROOM_OBJECTS,
+  PROP_TYPES,
+  SCENE_OBJECTS,
+  PROP_SPAWNS,
+  HUNTER_SPAWNS,
 };

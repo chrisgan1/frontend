@@ -1,24 +1,17 @@
-const { v4: uuidv4 } = require('uuid');
 const C = require('./constants');
 
 class GameRoom {
   constructor(roomCode, io) {
     this.roomCode = roomCode;
     this.io = io;
-    this.players = new Map(); // socketId → PlayerData
+    this.players = new Map();
     this.phase = 'lobby';
     this.roundNumber = 0;
-    this.coherence = 0;
-    this.nightmareMeter = 0;
-    this.tasks = new Map();
-    this.objects = C.ROOM_OBJECTS.map(o => ({ ...o, isCorrupted: false }));
-    this.scores = { figments: 0, nightmare: 0 };
-    this.vote = null;
-    this.roundEndsAt = null;
+    this.scores = { hunters: 0, props: 0 };
+    this.huntEndsAt = null;
+    this.hidingEndsAt = null;
     this._tickInterval = null;
-    this._taskInterval = null;
-    this._voteTimeout = null;
-    this._roundTimeSaved = null;
+    this._phaseTimeout = null;
   }
 
   get playerList() {
@@ -26,41 +19,27 @@ class GameRoom {
       id: p.id,
       name: p.name,
       colorIndex: p.colorIndex,
+      role: p.role,
       x: p.x,
-      y: p.y,
+      y: 0,
+      z: p.z,
+      yaw: p.yaw,
       isAlive: p.isAlive,
       isHost: p.isHost,
+      disguise: p.disguise,
+      movesLeft: p.movesLeft,
+      moveWindowEndAt: p.moveWindowEndAt,
     }));
   }
 
   getPublicGameState() {
-    const now = Date.now();
     return {
       roomCode: this.roomCode,
       phase: this.phase,
       roundNumber: this.roundNumber,
       players: this.playerList,
-      objects: this.objects,
-      tasks: Array.from(this.tasks.values()).map(t => ({
-        id: t.id,
-        objectId: t.objectId,
-        x: t.x,
-        y: t.y,
-        isCorrupted: t.isCorrupted,
-        isActive: t.isActive,
-        activePlayerId: t.activePlayerId,
-        progressMs: t.isActive && t.startedAt ? Math.min(C.TASK_HOLD_MS, now - t.startedAt) : 0,
-        isComplete: t.isComplete,
-      })),
-      coherence: this.coherence,
-      nightmareMeter: this.nightmareMeter,
-      roundEndsAt: this.roundEndsAt,
-      vote: this.vote ? {
-        targetId: this.vote.targetId,
-        initiatorId: this.vote.initiatorId,
-        votes: this.vote.votes,
-        expiresAt: this.vote.expiresAt,
-      } : null,
+      huntEndsAt: this.huntEndsAt,
+      hidingEndsAt: this.hidingEndsAt,
       scores: this.scores,
     };
   }
@@ -79,15 +58,23 @@ class GameRoom {
     let colorIndex = 0;
     while (usedColors.has(colorIndex) && colorIndex < 8) colorIndex++;
 
+    const spawnIdx = this.players.size % C.PROP_SPAWNS.length;
+    const spawn = C.PROP_SPAWNS[spawnIdx];
+
     const player = {
       id: socket.id,
-      name: (name || 'Figment').slice(0, 16).trim() || 'Figment',
+      name: (name || 'Player').slice(0, 16).trim() || 'Player',
       colorIndex,
-      x: 350 + Math.random() * 100,
-      y: 250 + Math.random() * 100,
+      x: spawn.x,
+      z: spawn.z,
+      yaw: 0,
       isAlive: true,
       isHost: this.players.size === 0,
       role: null,
+      disguise: null,
+      movesLeft: C.PROP_MOVES_PER_ROUND,
+      moveWindowEndAt: 0,
+      tauntReadyAt: 0,
       socket,
     };
 
@@ -106,9 +93,7 @@ class GameRoom {
   removePlayer(socketId) {
     const player = this.players.get(socketId);
     if (!player) return;
-
     this.players.delete(socketId);
-
     if (this.players.size === 0) return;
 
     if (player.isHost) {
@@ -116,15 +101,8 @@ class GameRoom {
       if (next) next.isHost = true;
     }
 
-    if (this.phase === 'playing' || this.phase === 'voting') {
-      if (player.role === 'nightmare') {
-        this._endRound('figments');
-        return;
-      }
-      if (this.players.size < 2) {
-        this._endGame(null);
-        return;
-      }
+    if (this.phase === 'hiding' || this.phase === 'hunting') {
+      this._checkWinCondition();
     }
 
     this.io.to(this.roomCode).emit('room-updated', { players: this.playerList });
@@ -132,10 +110,9 @@ class GameRoom {
 
   startGame(socketId) {
     const player = this.players.get(socketId);
-    if (!player?.isHost) return;
-    if (this.phase !== 'lobby') return;
+    if (!player?.isHost || this.phase !== 'lobby') return;
     if (this.players.size < C.MIN_PLAYERS) {
-      player.socket.emit('error', { message: `Need at least ${C.MIN_PLAYERS} players to start` });
+      player.socket.emit('error', { message: `Need at least ${C.MIN_PLAYERS} players` });
       return;
     }
 
@@ -149,283 +126,234 @@ class GameRoom {
       });
     }
 
-    setTimeout(() => this._startRound(), 4000);
+    setTimeout(() => this._startHiding(), 4000);
   }
 
   _assignRoles() {
     const ids = Array.from(this.players.keys());
-    const nightmareIdx = Math.floor(Math.random() * ids.length);
+    const numHunters = Math.max(1, Math.floor(ids.length / 3));
+    const shuffled = [...ids].sort(() => Math.random() - 0.5);
     for (let i = 0; i < ids.length; i++) {
-      this.players.get(ids[i]).role = i === nightmareIdx ? 'nightmare' : 'figment';
+      this.players.get(shuffled[i]).role = i < numHunters ? 'hunter' : 'prop';
     }
   }
 
-  _startRound() {
+  _startHiding() {
     this.roundNumber++;
-    this.coherence = 0;
-    this.nightmareMeter = 0;
-    this.tasks.clear();
-    this.objects.forEach(o => { o.isCorrupted = false; });
-    for (const [, p] of this.players) p.isAlive = true;
+    this.hidingEndsAt = Date.now() + C.HIDING_DURATION_MS;
 
-    this.phase = 'playing';
-    this.roundEndsAt = Date.now() + C.ROUND_DURATION_MS;
+    for (const [, p] of this.players) {
+      p.isAlive = true;
+      p.disguise = null;
+      p.movesLeft = C.PROP_MOVES_PER_ROUND;
+      p.moveWindowEndAt = 0;
+      p.tauntReadyAt = 0;
+
+      if (p.role === 'hunter') {
+        const spawnIdx = 0;
+        const spawn = C.HUNTER_SPAWNS[spawnIdx % C.HUNTER_SPAWNS.length];
+        p.x = spawn.x + (Math.random() - 0.5) * 0.5;
+        p.z = spawn.z + (Math.random() - 0.5) * 0.5;
+      } else {
+        const spawnIdx = Math.floor(Math.random() * C.PROP_SPAWNS.length);
+        const spawn = C.PROP_SPAWNS[spawnIdx];
+        p.x = spawn.x + (Math.random() - 0.5) * 0.5;
+        p.z = spawn.z + (Math.random() - 0.5) * 0.5;
+      }
+      p.yaw = Math.random() * Math.PI * 2;
+    }
+
+    this.phase = 'hiding';
+    this.huntEndsAt = null;
+    this.io.to(this.roomCode).emit('phase-hiding', { gameState: this.getPublicGameState() });
+    this._phaseTimeout = setTimeout(() => this._startHunting(), C.HIDING_DURATION_MS);
+  }
+
+  _startHunting() {
+    this.phase = 'hunting';
+    this.huntEndsAt = Date.now() + C.HUNTING_DURATION_MS;
+    this.hidingEndsAt = null;
+
+    this.io.to(this.roomCode).emit('phase-hunting', { gameState: this.getPublicGameState() });
 
     this._tickInterval = setInterval(() => this._tick(), C.GAME_STATE_TICK_MS);
-    this._taskInterval = setInterval(() => this._spawnTask(), C.TASK_SPAWN_INTERVAL_MS);
-
-    setTimeout(() => this._spawnTask(), 2000);
+    this._phaseTimeout = setTimeout(() => this._endRound('props'), C.HUNTING_DURATION_MS);
   }
 
   _tick() {
-    if (this.coherence >= 100) { this._endRound('figments'); return; }
-    if (this.nightmareMeter >= 100) { this._endRound('nightmare'); return; }
-
-    if (this.roundEndsAt && Date.now() >= this.roundEndsAt) {
-      this._endRound(this.coherence >= this.nightmareMeter ? 'figments' : 'nightmare');
-      return;
-    }
-
     this.io.to(this.roomCode).emit('game-state', this.getPublicGameState());
   }
 
-  _spawnTask() {
-    if (this.phase !== 'playing') return;
-
-    const activeTasks = Array.from(this.tasks.values()).filter(t => !t.isComplete);
-    if (activeTasks.length >= C.MAX_SIMULTANEOUS_TASKS) return;
-
-    const occupiedObjects = new Set(activeTasks.map(t => t.objectId));
-    const eligible = this.objects.filter(o => !o.isCorrupted && !occupiedObjects.has(o.id));
-    if (eligible.length === 0) return;
-
-    const obj = eligible[Math.floor(Math.random() * eligible.length)];
-    const task = {
-      id: uuidv4(),
-      objectId: obj.id,
-      x: obj.x,
-      y: obj.y,
-      isCorrupted: false,
-      isActive: false,
-      activePlayerId: null,
-      progressMs: 0,
-      isComplete: false,
-      startedAt: null,
-    };
-    this.tasks.set(task.id, task);
-  }
-
-  handlePlayerMove(socketId, x, y) {
-    const p = this.players.get(socketId);
-    if (!p || !p.isAlive || this.phase !== 'playing') return;
-    p.x = Math.max(20, Math.min(780, x));
-    p.y = Math.max(20, Math.min(580, y));
-  }
-
-  handleStartTask(socketId, taskId) {
-    if (this.phase !== 'playing') return;
-    const p = this.players.get(socketId);
-    if (!p || !p.isAlive || p.role === 'nightmare') return;
-
-    const task = this.tasks.get(taskId);
-    if (!task || task.isComplete || task.isActive) return;
-
-    const dx = p.x - task.x, dy = p.y - task.y;
-    if (Math.sqrt(dx * dx + dy * dy) > C.INTERACTION_RADIUS) return;
-
-    task.isActive = true;
-    task.activePlayerId = socketId;
-    task.startedAt = Date.now();
-  }
-
-  handleCompleteTask(socketId, taskId) {
-    if (this.phase !== 'playing') return;
+  handlePlayerMove(socketId, x, z, yaw) {
     const p = this.players.get(socketId);
     if (!p || !p.isAlive) return;
 
-    const task = this.tasks.get(taskId);
-    if (!task || task.isComplete || task.activePlayerId !== socketId) return;
-    if (!task.startedAt || Date.now() - task.startedAt < C.TASK_HOLD_MS) return;
-
-    task.isComplete = true;
-    task.isActive = false;
-    this.coherence = Math.min(100, this.coherence + C.COHERENCE_PER_TASK);
-
-    this.io.to(this.roomCode).emit('task-completed', {
-      taskId,
-      coherenceDelta: C.COHERENCE_PER_TASK,
-    });
-  }
-
-  handleCancelTask(socketId) {
-    for (const [, task] of this.tasks) {
-      if (task.activePlayerId === socketId) {
-        task.isActive = false;
-        task.activePlayerId = null;
-        task.startedAt = null;
+    if (p.role === 'hunter' && this.phase === 'hunting') {
+      p.x = Math.max(0.3, Math.min(C.ROOM_SIZE - 0.3, x));
+      p.z = Math.max(0.3, Math.min(C.ROOM_SIZE - 0.3, z));
+      p.yaw = yaw;
+    } else if (p.role === 'prop' && this.phase === 'hiding') {
+      p.x = Math.max(0.3, Math.min(C.ROOM_SIZE - 0.3, x));
+      p.z = Math.max(0.3, Math.min(C.ROOM_SIZE - 0.3, z));
+      p.yaw = yaw;
+    } else if (p.role === 'prop' && this.phase === 'hunting') {
+      if (Date.now() < p.moveWindowEndAt) {
+        p.x = Math.max(0.3, Math.min(C.ROOM_SIZE - 0.3, x));
+        p.z = Math.max(0.3, Math.min(C.ROOM_SIZE - 0.3, z));
+        p.yaw = yaw;
       }
     }
   }
 
-  handleCorruptObject(socketId, objectId) {
-    if (this.phase !== 'playing') return;
+  handlePropUseMove(socketId) {
     const p = this.players.get(socketId);
-    if (!p || !p.isAlive || p.role !== 'nightmare') return;
+    if (!p || !p.isAlive || p.role !== 'prop') return;
+    if (this.phase !== 'hunting') return;
+    if (p.movesLeft <= 0) return;
+    if (Date.now() < p.moveWindowEndAt) return;
 
-    const obj = this.objects.find(o => o.id === objectId);
-    if (!obj || obj.isCorrupted) return;
-
-    const dx = p.x - obj.x, dy = p.y - obj.y;
-    if (Math.sqrt(dx * dx + dy * dy) > C.INTERACTION_RADIUS) return;
-
-    obj.isCorrupted = true;
-
-    for (const [taskId, task] of this.tasks) {
-      if (task.objectId === objectId) this.tasks.delete(taskId);
-    }
-
-    this.nightmareMeter = Math.min(100, this.nightmareMeter + C.NIGHTMARE_PER_CORRUPT);
-
-    this.io.to(this.roomCode).emit('object-corrupted', {
-      objectId,
-      nightmareDelta: C.NIGHTMARE_PER_CORRUPT,
+    p.movesLeft--;
+    p.moveWindowEndAt = Date.now() + C.MOVE_WINDOW_MS;
+    this.io.to(this.roomCode).emit('prop-move-started', {
+      propId: socketId,
+      movesLeft: p.movesLeft,
+      windowEndsAt: p.moveWindowEndAt,
     });
   }
 
-  handleCallVote(socketId, targetId) {
-    if (this.phase !== 'playing' || this.vote !== null) return;
-    const caller = this.players.get(socketId);
-    const target = this.players.get(targetId);
-    if (!caller?.isAlive || !target?.isAlive || targetId === socketId) return;
+  handleDisguise(socketId, typeId) {
+    const p = this.players.get(socketId);
+    if (!p || !p.isAlive || p.role !== 'prop') return;
+    if (this.phase !== 'hiding' && this.phase !== 'hunting') return;
+    if (this.phase === 'hunting' && Date.now() >= p.moveWindowEndAt) return;
 
-    this._roundTimeSaved = Math.max(0, (this.roundEndsAt || Date.now()) - Date.now());
-    this._clearIntervals();
+    const valid = C.PROP_TYPES.find(t => t.id === typeId);
+    if (!valid) return;
 
-    this.phase = 'voting';
-    const expiresAt = Date.now() + C.VOTE_DURATION_MS;
-    this.vote = { targetId, initiatorId: socketId, votes: {}, expiresAt };
-
-    this.io.to(this.roomCode).emit('vote-started', {
-      targetId,
-      initiatorId: socketId,
-      timeoutMs: C.VOTE_DURATION_MS,
-    });
-
-    this._voteTimeout = setTimeout(() => this._resolveVote(), C.VOTE_DURATION_MS);
+    p.disguise = typeId;
+    this.io.to(this.roomCode).emit('prop-disguised', { propId: socketId, typeId });
   }
 
-  handleCastVote(socketId, targetId) {
-    if (this.phase !== 'voting' || !this.vote) return;
-    const voter = this.players.get(socketId);
-    if (!voter?.isAlive || this.vote.votes[socketId]) return;
+  handleTaunt(socketId) {
+    const p = this.players.get(socketId);
+    if (!p || !p.isAlive || p.role !== 'prop') return;
+    if (this.phase !== 'hunting') return;
 
-    this.vote.votes[socketId] = targetId;
-    this.io.to(this.roomCode).emit('game-state', this.getPublicGameState());
+    const now = Date.now();
+    if (now < p.tauntReadyAt) return;
 
-    const aliveCount = Array.from(this.players.values()).filter(p => p.isAlive).length;
-    if (Object.keys(this.vote.votes).length >= aliveCount) {
-      clearTimeout(this._voteTimeout);
-      this._resolveVote();
-    }
+    p.tauntReadyAt = now + C.TAUNT_COOLDOWN_MS;
+    this.io.to(this.roomCode).emit('prop-taunt', {
+      propId: socketId,
+      x: p.x,
+      z: p.z,
+      name: p.name,
+    });
   }
 
-  _resolveVote() {
-    if (!this.vote) return;
-    const { targetId, votes } = this.vote;
+  handleShoot(socketId, targetPropId) {
+    const shooter = this.players.get(socketId);
+    if (!shooter || !shooter.isAlive || shooter.role !== 'hunter') return;
+    if (this.phase !== 'hunting') return;
 
-    const voteCounts = {};
-    for (const v of Object.values(votes)) {
-      voteCounts[v] = (voteCounts[v] || 0) + 1;
-    }
-
-    const votesForTarget = voteCounts[targetId] || 0;
-    const totalVoters = Array.from(this.players.values()).filter(p => p.isAlive).length;
-    const ejected = votesForTarget > totalVoters / 2;
-
-    let nightmareEjected = false;
-    if (ejected) {
-      const target = this.players.get(targetId);
-      if (target) {
-        nightmareEjected = target.role === 'nightmare';
-        target.isAlive = false;
-        this.io.to(this.roomCode).emit('player-ejected', { playerId: targetId });
-        if (!nightmareEjected) {
-          this.coherence = Math.max(0, this.coherence - C.COHERENCE_PENALTY_WRONG_VOTE);
-        }
-      }
-    }
-
-    this.io.to(this.roomCode).emit('vote-result', {
-      targetId,
-      ejected,
-      votesCast: votes,
-    });
-
-    this.vote = null;
-
-    if (nightmareEjected) {
-      this._endRound('figments');
+    if (!targetPropId) {
+      this.io.to(this.roomCode).emit('shot-missed', { hunterId: socketId });
       return;
     }
 
-    // Resume round
-    this.phase = 'playing';
-    this.roundEndsAt = Date.now() + (this._roundTimeSaved || 30_000);
-    this._tickInterval = setInterval(() => this._tick(), C.GAME_STATE_TICK_MS);
-    this._taskInterval = setInterval(() => this._spawnTask(), C.TASK_SPAWN_INTERVAL_MS);
+    const target = this.players.get(targetPropId);
+    if (!target || !target.isAlive || target.role !== 'prop') {
+      this.io.to(this.roomCode).emit('shot-missed', { hunterId: socketId });
+      return;
+    }
+
+    const dx = shooter.x - target.x;
+    const dz = shooter.z - target.z;
+    if (Math.sqrt(dx * dx + dz * dz) > C.SHOOT_MAX_RANGE) {
+      this.io.to(this.roomCode).emit('shot-missed', { hunterId: socketId });
+      return;
+    }
+
+    target.isAlive = false;
+    this.io.to(this.roomCode).emit('prop-found', {
+      propId: targetPropId,
+      hunterId: socketId,
+      propName: target.name,
+      hunterName: shooter.name,
+    });
+
+    this._checkWinCondition();
+  }
+
+  _checkWinCondition() {
+    const props = Array.from(this.players.values()).filter(p => p.role === 'prop');
+    const hunters = Array.from(this.players.values()).filter(p => p.role === 'hunter');
+
+    if (props.length === 0 || hunters.length === 0) { this._endRound(null); return; }
+
+    const aliveProps = props.filter(p => p.isAlive);
+    if (aliveProps.length === 0) this._endRound('hunters');
   }
 
   _endRound(winner) {
-    this._clearIntervals();
+    clearInterval(this._tickInterval);
+    clearTimeout(this._phaseTimeout);
+    this._tickInterval = null;
+    this._phaseTimeout = null;
 
-    if (winner === 'figments') this.scores.figments++;
-    else if (winner === 'nightmare') this.scores.nightmare++;
+    if (winner === 'hunters') this.scores.hunters++;
+    else if (winner === 'props') this.scores.props++;
+
+    const propReveal = Array.from(this.players.values())
+      .filter(p => p.role === 'prop')
+      .map(p => ({ id: p.id, name: p.name, x: p.x, z: p.z, disguise: p.disguise, survived: p.isAlive }));
 
     this.phase = 'round-end';
+    this.huntEndsAt = null;
     this.io.to(this.roomCode).emit('round-end', {
       winner,
       roundNumber: this.roundNumber,
       scores: this.scores,
+      propReveal,
     });
 
-    const gameOver = this.scores.figments >= C.ROUNDS_TO_WIN || this.scores.nightmare >= C.ROUNDS_TO_WIN;
-    setTimeout(() => gameOver ? this._endGame(winner) : this._startRound(), 5000);
+    const gameOver = this.scores.hunters >= C.ROUNDS_TO_WIN || this.scores.props >= C.ROUNDS_TO_WIN;
+    setTimeout(() => gameOver ? this._endGame(winner) : this._startHiding(), 6000);
   }
 
   _endGame(winner) {
-    this._clearIntervals();
-
-    let nightmareId = null;
-    for (const [id, p] of this.players) {
-      if (p.role === 'nightmare') { nightmareId = id; break; }
-    }
-
     this.phase = 'game-over';
-    this.io.to(this.roomCode).emit('game-over', { winner, scores: this.scores, nightmareId });
 
-    // Reset to lobby after delay
+    const propPlayers = Array.from(this.players.values())
+      .filter(p => p.role === 'prop')
+      .map(p => ({ id: p.id, name: p.name, colorIndex: p.colorIndex }));
+    const hunterPlayers = Array.from(this.players.values())
+      .filter(p => p.role === 'hunter')
+      .map(p => ({ id: p.id, name: p.name, colorIndex: p.colorIndex }));
+
+    this.io.to(this.roomCode).emit('game-over', {
+      winner,
+      scores: this.scores,
+      props: propPlayers,
+      hunters: hunterPlayers,
+    });
+
     setTimeout(() => {
       this.phase = 'lobby';
       this.roundNumber = 0;
-      this.scores = { figments: 0, nightmare: 0 };
-      this.tasks.clear();
-      this.objects.forEach(o => { o.isCorrupted = false; });
-      for (const [, p] of this.players) { p.role = null; p.isAlive = true; }
+      this.scores = { hunters: 0, props: 0 };
+      for (const [, p] of this.players) {
+        p.role = null;
+        p.isAlive = true;
+        p.disguise = null;
+      }
       this.io.to(this.roomCode).emit('room-updated', { players: this.playerList });
     }, 8000);
   }
 
-  _clearIntervals() {
-    clearInterval(this._tickInterval);
-    clearInterval(this._taskInterval);
-    clearTimeout(this._voteTimeout);
-    this._tickInterval = null;
-    this._taskInterval = null;
-    this._voteTimeout = null;
-  }
-
   destroy() {
-    this._clearIntervals();
+    clearInterval(this._tickInterval);
+    clearTimeout(this._phaseTimeout);
   }
 }
 
