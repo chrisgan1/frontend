@@ -7,6 +7,7 @@ import GameHUD from './components/GameHUD';
 import RoleReveal from './components/RoleReveal';
 import VoteUI from './components/VoteUI';
 import ResultsScreen from './components/ResultsScreen';
+import TouchControls from './components/TouchControls';
 
 export default function App() {
   const phase = useGameStore(s => s.phase);
@@ -52,7 +53,7 @@ export default function App() {
   const showCanvas = phase !== 'lobby';
 
   return (
-    <div className="w-screen h-screen bg-dream-bg overflow-hidden relative">
+    <div className="w-screen h-screen bg-dream-bg overflow-hidden relative" style={{ touchAction: 'none' }}>
       {phase === 'lobby' && <LobbyUI />}
 
       {/* Canvas mounts once when game starts, stays alive through rounds */}
@@ -68,6 +69,7 @@ export default function App() {
         </div>
       )}
 
+      <TouchControls />
       {phase === 'role-reveal' && <RoleReveal />}
       {phase === 'voting' && <VoteUI />}
       {(phase === 'round-end' || phase === 'game-over') && <ResultsScreen />}
