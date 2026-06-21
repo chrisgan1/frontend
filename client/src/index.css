@@ -2,20 +2,52 @@
 @tailwind components;
 @tailwind utilities;
 
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
+body {
+  font-family: 'Nunito', sans-serif;
+  background: #1a0a2e;
+  color: white;
 }
 
-html, body, #root {
-  height: 100%;
-  overflow: hidden;
-  background: #0d0a1a;
-  font-family: system-ui, -apple-system, sans-serif;
+.font-game {
+  font-family: 'Fredoka One', cursive;
 }
 
-::-webkit-scrollbar { width: 5px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #3b1f6e; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #7c3aed; }
+/* CSS2D labels */
+.item-label {
+  font-family: 'Fredoka One', cursive;
+  font-size: 14px;
+  padding: 2px 6px;
+  border-radius: 8px;
+  background: rgba(0,0,0,0.6);
+  color: white;
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
+}
+
+.player-label {
+  font-family: 'Fredoka One', cursive;
+  font-size: 13px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: rgba(0,0,0,0.5);
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
+}
+
+.bonk-label {
+  font-family: 'Fredoka One', cursive;
+  font-size: 20px;
+  font-weight: bold;
+  color: #ff4757;
+  text-shadow: 2px 2px 0 #000;
+  pointer-events: none;
+  user-select: none;
+  animation: bonk-fade 0.8s ease-out forwards;
+}
+
+@keyframes bonk-fade {
+  0%   { opacity: 1; transform: scale(1.4) translateY(0); }
+  100% { opacity: 0; transform: scale(0.8) translateY(-20px); }
+}

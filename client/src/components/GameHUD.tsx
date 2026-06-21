@@ -1,146 +1,77 @@
-import { useState, useEffect } from 'react';
+import React from 'react';
 import { useGameStore } from '../store/useGameStore';
-import { callVote } from '../socket';
-import { PLAYER_COLORS } from '../constants';
+import { ITEM_POOL } from '../constants';
 
 export default function GameHUD() {
-  const gameState = useGameStore(s => s.gameState);
-  const myRole = useGameStore(s => s.myRole);
-  const myId = useGameStore(s => s.myId);
-  const [showPicker, setShowPicker] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(90);
+  const myList = useGameStore((s) => s.myList);
+  const worldItems = useGameStore((s) => s.worldItems);
+  const myId = useGameStore((s) => s.myId);
+  const timer = useGameStore((s) => s.timer);
+  const scores = useGameStore((s) => s.scores);
+  const players = useGameStore((s) => s.players);
 
-  useEffect(() => {
-    if (!gameState?.roundEndsAt) return;
-    const endsAt = gameState.roundEndsAt;
-    const tick = () => setTimeLeft(Math.max(0, Math.ceil((endsAt - Date.now()) / 1000)));
-    tick();
-    const id = setInterval(tick, 250);
-    return () => clearInterval(id);
-  }, [gameState?.roundEndsAt]);
+  const collectedDefIds = new Set(
+    Object.values(worldItems)
+      .filter((wi) => wi.collectedBy === myId)
+      .map((wi) => wi.defId)
+  );
 
-  if (!gameState) return null;
-
-  const mins = String(Math.floor(timeLeft / 60)).padStart(2, '0');
-  const secs = String(timeLeft % 60).padStart(2, '0');
-  const lowTime = timeLeft <= 15;
-
-  const others = gameState.players.filter(p => p.id !== myId && p.isAlive);
+  const mins = Math.floor(timer / 60);
+  const secs = String(timer % 60).padStart(2, '0');
+  const timerClass = timer <= 30 ? 'text-game-accent animate-pulse' : 'text-game-yellow';
 
   return (
-    <div className="absolute inset-0 pointer-events-none">
-      {/* Top bar */}
-      <div className="flex items-start justify-between p-4 gap-4">
-        {/* Coherence */}
-        <div className="w-52">
-          <div className="flex justify-between text-xs mb-1">
-            <span className="text-dream-teal font-bold tracking-wide">DREAM COHERENCE</span>
-            <span className="text-dream-teal font-mono">{Math.round(gameState.coherence)}%</span>
-          </div>
-          <div className="h-3 bg-dream-bg/80 rounded-full overflow-hidden border border-dream-teal/20">
-            <div
-              className="h-full rounded-full transition-all duration-300"
-              style={{
-                width: `${gameState.coherence}%`,
-                background: 'linear-gradient(90deg, #0891b2, #06b6d4)',
-              }}
-            />
-          </div>
-          <div className="text-right text-xs text-dream-muted mt-0.5">
-            {gameState.scores.figments}W
-          </div>
-        </div>
-
-        {/* Timer */}
-        <div className={`text-4xl font-mono font-bold tabular-nums ${lowTime ? 'text-dream-red animate-pulse' : 'text-dream-text'}`}>
+    <>
+      {/* Timer */}
+      <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-game-card bg-opacity-90 rounded-2xl px-6 py-2 border border-game-border">
+        <span className={`font-game text-4xl ${timerClass}`}>
           {mins}:{secs}
-        </div>
+        </span>
+      </div>
 
-        {/* Nightmare meter */}
-        <div className="w-52">
-          <div className="flex justify-between text-xs mb-1">
-            <span className="text-dream-red font-bold tracking-wide">NIGHTMARE</span>
-            <span className="text-dream-red font-mono">{Math.round(gameState.nightmareMeter)}%</span>
-          </div>
-          <div className="h-3 bg-dream-bg/80 rounded-full overflow-hidden border border-dream-red/20">
-            <div
-              className="h-full rounded-full transition-all duration-300"
-              style={{
-                width: `${gameState.nightmareMeter}%`,
-                background: 'linear-gradient(90deg, #991b1b, #dc2626)',
-              }}
-            />
-          </div>
-          <div className="text-left text-xs text-dream-muted mt-0.5">
-            {gameState.scores.nightmare}W
-          </div>
+      {/* Shopping list */}
+      <div className="absolute top-4 left-4 bg-game-card bg-opacity-90 rounded-2xl p-3 border border-game-border min-w-[140px]">
+        <p className="font-game text-game-blue text-sm mb-2">Shopping List</p>
+        <div className="space-y-1">
+          {myList.map((defId) => {
+            const def = ITEM_POOL.find((i) => i.id === defId)!;
+            const got = collectedDefIds.has(defId);
+            return (
+              <div key={defId} className={`flex items-center gap-2 text-sm font-body ${got ? 'opacity-40 line-through' : ''}`}>
+                <span>{def?.emoji}</span>
+                <span className={got ? 'text-gray-400' : 'text-white'}>{def?.name}</span>
+                {got && <span className="text-game-green ml-auto">✓</span>}
+              </div>
+            );
+          })}
+        </div>
+        <div className="mt-2 pt-2 border-t border-game-border">
+          <span className="font-game text-game-green text-sm">
+            {collectedDefIds.size}/{myList.length}
+          </span>
         </div>
       </div>
 
-      {/* Bottom-right: player list + vote */}
-      <div className="pointer-events-auto absolute bottom-4 right-4 flex flex-col gap-1.5 items-end">
-        {gameState.players.map(p => (
-          <div
-            key={p.id}
-            className="flex items-center gap-2 bg-dream-bg/70 backdrop-blur-sm rounded-lg px-3 py-1 text-xs"
-          >
-            <div
-              className="w-2 h-2 rounded-full flex-shrink-0"
-              style={{ backgroundColor: PLAYER_COLORS[p.colorIndex], opacity: p.isAlive ? 1 : 0.3 }}
-            />
-            <span className={p.isAlive ? 'text-dream-text' : 'text-dream-muted line-through'}>
-              {p.name}
-            </span>
-            {p.id === myId && <span className="text-dream-muted/60 text-[10px]">(you)</span>}
-          </div>
-        ))}
-
-        {!showPicker && others.length > 0 && (
-          <button
-            onClick={() => setShowPicker(true)}
-            className="mt-2 px-4 py-2 bg-dream-gold/20 hover:bg-dream-gold/30 border border-dream-gold/40 text-dream-gold text-xs font-bold rounded-lg transition-colors"
-          >
-            CALL VOTE
-          </button>
-        )}
-
-        {showPicker && (
-          <div className="bg-dream-surface border border-dream-gold/40 rounded-xl p-3 space-y-1.5 min-w-[160px]">
-            <div className="text-dream-gold text-xs font-bold mb-2 text-center">Who's the Nightmare?</div>
-            {others.map(p => (
-              <button
-                key={p.id}
-                onClick={() => { callVote(p.id); setShowPicker(false); }}
-                className="w-full flex items-center gap-2 px-3 py-2 bg-dream-bg/50 hover:bg-dream-gold/10 rounded-lg text-xs text-dream-text transition-colors"
-              >
-                <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: PLAYER_COLORS[p.colorIndex] }} />
-                {p.name}
-              </button>
+      {/* Scoreboard */}
+      <div className="absolute top-4 right-4 bg-game-card bg-opacity-90 rounded-2xl p-3 border border-game-border min-w-[120px]">
+        <p className="font-game text-game-blue text-sm mb-2">Scores</p>
+        <div className="space-y-1">
+          {Object.values(players)
+            .sort((a, b) => (scores[b.id] ?? 0) - (scores[a.id] ?? 0))
+            .map((p) => (
+              <div key={p.id} className="flex items-center gap-2 text-sm">
+                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: p.colorHex }} />
+                <span className="font-body text-white truncate max-w-[60px]">{p.name}</span>
+                <span className="font-game text-game-yellow ml-auto">{scores[p.id] ?? 0}</span>
+              </div>
             ))}
-            <button
-              onClick={() => setShowPicker(false)}
-              className="w-full text-center text-dream-muted text-xs pt-1 hover:text-dream-text transition-colors"
-            >
-              Cancel
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* Bottom-left: role reminder */}
-      <div className="pointer-events-none absolute bottom-4 left-4">
-        <div
-          className={`text-xs px-3 py-2 rounded-lg bg-dream-bg/70 backdrop-blur-sm border ${
-            myRole === 'nightmare'
-              ? 'border-dream-red/40 text-dream-red'
-              : 'border-dream-teal/40 text-dream-teal'
-          }`}
-        >
-          {myRole === 'nightmare'
-            ? 'NIGHTMARE · F to corrupt · WASD to move'
-            : 'FIGMENT · E to help · WASD to move'}
         </div>
       </div>
-    </div>
+
+      {/* Controls hint */}
+      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black bg-opacity-50 rounded-xl px-4 py-2">
+        <span className="font-body text-xs text-gray-400">WASD / Arrows to move · Shift to sprint</span>
+      </div>
+    </>
   );
 }

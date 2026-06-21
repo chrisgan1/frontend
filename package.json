@@ -1,35 +1,12 @@
 {
-  "name": "fever-dream",
+  "name": "trolley-chaos",
   "version": "1.0.0",
-  "private": true,
-  "main": "electron/main.js",
   "scripts": {
     "dev": "concurrently \"npm run dev --prefix server\" \"npm run dev --prefix client\"",
-    "electron:dev": "concurrently \"npm run dev --prefix server\" \"npm run dev --prefix client\" \"wait-on http://localhost:5173 && electron .\"",
-    "electron:build": "npm run build --prefix client && electron-builder",
-    "install:all": "npm install && npm install --prefix server && npm install --prefix client",
-    "start": "concurrently \"npm start --prefix server\" \"npm run preview --prefix client\""
-  },
-  "build": {
-    "appId": "com.feverdream.game",
-    "productName": "Fever Dream",
-    "files": [
-      "electron/**",
-      "client/dist/**",
-      "server/**",
-      "!server/node_modules/.cache"
-    ],
-    "directories": {
-      "output": "dist-electron"
-    },
-    "win": { "target": "nsis" },
-    "mac": { "target": "dmg" },
-    "linux": { "target": "AppImage" }
+    "build": "npm run build --prefix client",
+    "start": "npm start --prefix server"
   },
   "devDependencies": {
-    "concurrently": "^8.2.2",
-    "electron": "^42.4.1",
-    "electron-builder": "^26.15.3",
-    "wait-on": "^9.0.10"
+    "concurrently": "^8.2.2"
   }
 }

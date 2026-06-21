@@ -1,19 +1,20 @@
 /** @type {import('tailwindcss').Config} */
 export default {
-  content: ['./index.html', './src/**/*.{ts,tsx}'],
+  content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
   theme: {
     extend: {
       colors: {
-        dream: {
-          bg: '#0d0a1a',
-          surface: '#1a1429',
-          accent: '#7c3aed',
-          teal: '#06b6d4',
-          red: '#dc2626',
-          gold: '#f59e0b',
-          text: '#f3e8ff',
-          muted: '#a78bfa',
-        },
+        'game-bg': '#1a0a2e',
+        'game-card': '#2d1b4e',
+        'game-border': '#5c3d8f',
+        'game-accent': '#ff6b6b',
+        'game-green': '#51cf66',
+        'game-yellow': '#ffd43b',
+        'game-blue': '#74c0fc',
+      },
+      fontFamily: {
+        game: ['"Fredoka One"', 'cursive'],
+        body: ['Nunito', 'sans-serif'],
       },
     },
   },

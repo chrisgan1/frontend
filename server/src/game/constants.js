@@ -1,40 +1,51 @@
-const PLAYER_COLORS = [
-  '#7c3aed', // purple
-  '#06b6d4', // teal
-  '#f59e0b', // gold
-  '#10b981', // emerald
-  '#f43f5e', // rose
-  '#3b82f6', // blue
-  '#a855f7', // violet
-  '#14b8a6', // cyan
+const ITEM_POOL = [
+  { id: 'milk',      name: 'Milk',      emoji: '🥛', aisle: 0 },
+  { id: 'eggs',      name: 'Eggs',      emoji: '🥚', aisle: 0 },
+  { id: 'cheese',    name: 'Cheese',    emoji: '🧀', aisle: 0 },
+  { id: 'yogurt',    name: 'Yogurt',    emoji: '🫙', aisle: 0 },
+  { id: 'steak',     name: 'Steak',     emoji: '🥩', aisle: 0 },
+  { id: 'fish',      name: 'Fish',      emoji: '🐟', aisle: 0 },
+  { id: 'bread',     name: 'Bread',     emoji: '🍞', aisle: 1 },
+  { id: 'chips',     name: 'Chips',     emoji: '🥨', aisle: 1 },
+  { id: 'cereal',    name: 'Cereal',    emoji: '🥣', aisle: 1 },
+  { id: 'pasta',     name: 'Pasta',     emoji: '🍝', aisle: 1 },
+  { id: 'rice',      name: 'Rice',      emoji: '🍚', aisle: 1 },
+  { id: 'chocolate', name: 'Choc',      emoji: '🍫', aisle: 1 },
+  { id: 'apple',     name: 'Apple',     emoji: '🍎', aisle: 2 },
+  { id: 'banana',    name: 'Banana',    emoji: '🍌', aisle: 2 },
+  { id: 'grapes',    name: 'Grapes',    emoji: '🍇', aisle: 2 },
+  { id: 'tomato',    name: 'Tomato',    emoji: '🍅', aisle: 2 },
+  { id: 'juice',     name: 'OJ',        emoji: '🧃', aisle: 3 },
+  { id: 'water',     name: 'Water',     emoji: '💧', aisle: 3 },
+  { id: 'cola',      name: 'Cola',      emoji: '🥤', aisle: 3 },
+  { id: 'coffee',    name: 'Coffee',    emoji: '☕', aisle: 3 },
+  { id: 'pizza',     name: 'Pizza',     emoji: '🍕', aisle: 4 },
+  { id: 'icecream',  name: 'Ice Cream', emoji: '🍦', aisle: 4 },
 ];
 
-const ROOM_OBJECTS = [
-  { id: 'obj1', x: 150, y: 110, label: 'Upside-Down Clock' },
-  { id: 'obj2', x: 400, y: 80,  label: 'Screaming Couch' },
-  { id: 'obj3', x: 650, y: 120, label: 'Floating Teapot' },
-  { id: 'obj4', x: 120, y: 330, label: 'Melting Bookshelf' },
-  { id: 'obj5', x: 400, y: 300, label: 'Infinite Staircase' },
-  { id: 'obj6', x: 680, y: 320, label: 'Mirror of Nothing' },
-  { id: 'obj7', x: 180, y: 510, label: 'Whispering Door' },
-  { id: 'obj8', x: 620, y: 490, label: 'Backwards Piano' },
+const PLAYER_COLORS = [
+  { value: 0xff4757, hex: '#ff4757' },
+  { value: 0x2ed573, hex: '#2ed573' },
+  { value: 0x1e90ff, hex: '#1e90ff' },
+  { value: 0xffa502, hex: '#ffa502' },
 ];
+
+const AISLE_Z_POSITIONS = [-30, -10, 10, 30];
+const MAP_HALF = 52;
+const LIST_SIZE = 5;
+const GAME_DURATION = 120;
+const CLEARANCE_SALE_TIME = 60;
+const ITEM_RESPAWN_DELAY = 10000;
+const COLLISION_SPEED_THRESHOLD = 3;
 
 module.exports = {
-  ROOM_CODE_LENGTH: 4,
-  MAX_PLAYERS: 8,
-  MIN_PLAYERS: 2,
-  ROUND_DURATION_MS: 90_000,
-  VOTE_DURATION_MS: 30_000,
-  TASK_HOLD_MS: 2000,
-  COHERENCE_PER_TASK: 12,
-  NIGHTMARE_PER_CORRUPT: 15,
-  COHERENCE_PENALTY_WRONG_VOTE: 15,
-  GAME_STATE_TICK_MS: 100,
-  TASK_SPAWN_INTERVAL_MS: 12_000,
-  MAX_SIMULTANEOUS_TASKS: 3,
-  ROUNDS_TO_WIN: 2,
-  INTERACTION_RADIUS: 80,
+  ITEM_POOL,
   PLAYER_COLORS,
-  ROOM_OBJECTS,
+  AISLE_Z_POSITIONS,
+  MAP_HALF,
+  LIST_SIZE,
+  GAME_DURATION,
+  CLEARANCE_SALE_TIME,
+  ITEM_RESPAWN_DELAY,
+  COLLISION_SPEED_THRESHOLD,
 };
