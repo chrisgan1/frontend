@@ -3,26 +3,34 @@ import { GameScene } from './Scene';
 import { PhysicsWorld } from './Physics';
 import { Supermarket } from './Supermarket';
 import { Trolley } from './Trolley';
+import { TrolleyFollower } from './TrolleyFollower';
+import { Player as PlayerCapsule } from './Player';
 import { Item3D } from './Item';
 import { InputHandler } from './InputHandler';
-import { ITEM_POOL, PICKUP_RADIUS, COLLISION_SPEED_THRESHOLD } from '../constants';
-import { emitPickup, emitCollision, startBroadcast, stopBroadcast } from '../socket';
-import type { Player, WorldItem } from '../types';
+import { ITEM_POOL } from '../constants';
+import { emitPickup, startBroadcast, stopBroadcast } from '../socket';
+import type { Player as PlayerData, WorldItem } from '../types';
 
 export class GameLoop {
   private gameScene: GameScene;
   private physics: PhysicsWorld;
   private supermarket: Supermarket;
-  private input: InputHandler;
+  readonly input: InputHandler;
 
-  private localTrolley: Trolley | null = null;
-  private remoteTrolleys = new Map<string, Trolley>();
+  private player: PlayerCapsule | null = null;
+  private trolleyFollower: TrolleyFollower | null = null;
+  private remotePlayers = new Map<string, Trolley>();
   private items = new Map<string, Item3D>();
+  private orbToItem = new Map<THREE.Mesh, Item3D>();
 
   private myId = '';
   private myList: string[] = [];
+  private myColorHex = '#ffffff';
   private pendingPickups = new Set<string>();
-  private collisionCooldown = new Map<string, number>();
+
+  private raycaster = new THREE.Raycaster();
+  private hoveredItem: Item3D | null = null;
+  private onHoverChange?: (label: string | null) => void;
 
   private rafId = 0;
   private lastTime = 0;
@@ -30,139 +38,161 @@ export class GameLoop {
   constructor(canvas: HTMLCanvasElement) {
     this.gameScene = new GameScene(canvas);
     this.physics = new PhysicsWorld();
-    this.input = new InputHandler();
+    this.input = new InputHandler(canvas);
     this.supermarket = null!;
+  }
+
+  setLockCallback(cb: (locked: boolean) => void) {
+    this.input.onLockChange = cb;
+  }
+
+  setHoverCallback(cb: (label: string | null) => void) {
+    this.onHoverChange = cb;
   }
 
   init(
     myId: string,
     myList: string[],
-    players: Record<string, Player>,
+    players: Record<string, PlayerData>,
     worldItems: Record<string, WorldItem>,
     seed: number
   ) {
     this.myId = myId;
     this.myList = myList;
+
     this.supermarket = new Supermarket(this.gameScene.scene, this.physics, seed);
 
-    // Spawn trolleys
+    const startPositions = [
+      { x: -44, z: -30 },
+      { x:  44, z: -18 },
+      { x: -44, z:  -6 },
+      { x:  44, z:   6 },
+    ];
+
     const playerList = Object.values(players);
-    const startPositions = this.generateStartPositions(playerList.length);
+    const myPlayer = players[myId];
+    this.myColorHex = myPlayer?.colorHex ?? '#ffffff';
 
     playerList.forEach((p, i) => {
-      const trolley = new Trolley(
-        p.id,
-        p.color,
-        p.colorHex,
-        p.id === myId,
-        this.gameScene.scene,
-        this.physics.world
-      );
-      trolley.setName(p.name);
-      const sp = startPositions[i];
-      trolley.setPosition(sp.x, sp.z);
-
+      const sp = startPositions[i % startPositions.length];
       if (p.id === myId) {
-        this.localTrolley = trolley;
-        // Collision listener
-        trolley.body.addEventListener('collide', (e: any) => {
-          const otherBody = e.body;
-          const otherTrolley = [...this.remoteTrolleys.values()].find(
-            (t) => t.body === otherBody
-          );
-          if (otherTrolley) {
-            const now = performance.now();
-            const cd = this.collisionCooldown.get(otherTrolley.playerId) ?? 0;
-            if (now - cd > 1500) {
-              const speed = trolley.getSpeed();
-              if (speed > COLLISION_SPEED_THRESHOLD) {
-                this.collisionCooldown.set(otherTrolley.playerId, now);
-                emitCollision(otherTrolley.playerId, speed);
-                this.gameScene.shake(4);
-              }
-            }
-          }
-        });
+        this.player = new PlayerCapsule(this.physics.world, sp.x, sp.z);
+        this.trolleyFollower = new TrolleyFollower(p.color, this.gameScene.scene);
       } else {
-        this.remoteTrolleys.set(p.id, trolley);
+        const t = new Trolley(p.id, p.color, p.colorHex, false, this.gameScene.scene, this.physics.world);
+        t.setName(p.name);
+        t.setPosition(sp.x, sp.z);
+        this.remotePlayers.set(p.id, t);
       }
     });
 
-    // Spawn world items
-    for (const [id, wi] of Object.entries(worldItems)) {
+    for (const wi of Object.values(worldItems)) {
       const def = ITEM_POOL.find((d) => d.id === wi.defId);
       if (!def) continue;
-      const myPlayer = players[myId];
-      const item = new Item3D(wi, def, this.gameScene.scene, myPlayer?.colorHex);
-      item.setHighlight(myList.includes(wi.defId), myPlayer?.colorHex ?? '#ffffff');
-      this.items.set(id, item);
+      const item = new Item3D(wi, def, this.gameScene.scene, this.myColorHex);
+      item.setHighlight(myList.includes(wi.defId), this.myColorHex);
+      this.items.set(wi.instanceId, item);
+      this.orbToItem.set(item.orbMesh, item);
     }
 
-    startBroadcast(() => this.localTrolley?.getPosition() ?? { x: 0, z: 0, rotY: 0, vx: 0, vz: 0 });
-    this.loop(0);
-  }
+    startBroadcast(() => {
+      const pos = this.player?.getPosition() ?? { x: 0, z: 0 };
+      return { x: pos.x, z: pos.z, rotY: this.input.yaw, vx: 0, vz: 0 };
+    });
 
-  private generateStartPositions(count: number) {
-    const positions = [
-      { x: -40, z: -40 },
-      { x:  40, z: -40 },
-      { x: -40, z:  40 },
-      { x:  40, z:  40 },
-    ];
-    return positions.slice(0, count);
+    this.loop(0);
   }
 
   private loop(now: number) {
     this.rafId = requestAnimationFrame((t) => this.loop(t));
-    const dt = Math.min((now - this.lastTime) / 1000, 0.05);
-    this.lastTime = now;
     if (now === 0) return;
 
-    const input = this.input.getState();
+    const dt = Math.min((now - this.lastTime) / 1000, 0.05);
+    this.lastTime = now;
 
-    if (this.localTrolley) {
-      const pos = this.localTrolley.getPosition();
-      const inPuddle = this.supermarket.checkJuicePuddle(pos.x, pos.z);
-      this.localTrolley.applyInput(input, dt, inPuddle);
-      this.checkPickups();
+    if (this.player) {
+      if (this.input.isLocked) {
+        const { forward, strafe, sprint } = this.input.getMovement();
+        this.player.applyMovement(forward, strafe, this.input.yaw, sprint);
+      }
+
+      this.physics.step(now);
+
+      const eyePos = this.player.getEyePosition();
+
+      // Juice puddle: reduce braking while slipping
+      this.player.body.linearDamping = this.supermarket.checkJuicePuddle(eyePos.x, eyePos.z) ? 0.25 : 0.9;
+
+      this.gameScene.updateCamera(this.input.yaw, this.input.pitch, eyePos, this.player.isMoving(), dt);
+
+      // Trolley trails 2 units behind player
+      const pos = this.player.getPosition();
+      const behindX = pos.x + Math.sin(this.input.yaw) * 2.2;
+      const behindZ = pos.z + Math.cos(this.input.yaw) * 2.2;
+      this.trolleyFollower?.update(behindX, behindZ, this.input.yaw, dt);
+    } else {
+      this.physics.step(now);
     }
 
-    this.physics.step(now);
+    // Raycaster hover + grab (only when pointer is locked)
+    if (this.input.isLocked) {
+      this.raycaster.setFromCamera(new THREE.Vector2(0, 0), this.gameScene.camera);
+      const orbMeshes = [...this.orbToItem.keys()].filter((m) => m.parent?.visible !== false);
+      const hits = this.raycaster.intersectObjects(orbMeshes);
 
-    this.localTrolley?.syncMesh();
-    for (const t of this.remoteTrolleys.values()) t.syncMesh();
+      const prevHovered = this.hoveredItem;
+      this.hoveredItem = null;
+      if (hits.length > 0 && hits[0].distance < 2.8) {
+        this.hoveredItem = this.orbToItem.get(hits[0].object as THREE.Mesh) ?? null;
+      }
 
+      if (prevHovered !== this.hoveredItem) {
+        prevHovered?.setRaycastHover(false);
+        this.hoveredItem?.setRaycastHover(true);
+        const grabbable = this.hoveredItem && this.myList.includes(this.hoveredItem.defId);
+        const def = grabbable ? ITEM_POOL.find((d) => d.id === this.hoveredItem!.defId) : null;
+        this.onHoverChange?.(def ? `${def.emoji} ${def.name}` : null);
+      }
+
+      if (this.input.consumeGrab()) {
+        const target = this.hoveredItem;
+        if (target && !this.pendingPickups.has(target.instanceId) && this.myList.includes(target.defId)) {
+          this.gameScene.triggerGrabAnim();
+          this.pendingPickups.add(target.instanceId);
+          emitPickup(target.instanceId);
+        }
+      }
+    } else if (this.hoveredItem) {
+      this.hoveredItem.setRaycastHover(false);
+      this.hoveredItem = null;
+      this.onHoverChange?.(null);
+    }
+
+    // Sync remote humanoids
+    for (const t of this.remotePlayers.values()) t.syncMesh();
+
+    // Rotate items
     for (const item of this.items.values()) {
       if (item.mesh.visible) item.update(dt);
     }
 
-    this.gameScene.render();
-  }
-
-  private checkPickups() {
-    if (!this.localTrolley) return;
-    const { x, z } = this.localTrolley.getPosition();
-
-    for (const [id, item] of this.items) {
-      if (!item.mesh.visible) continue;
-      if (this.pendingPickups.has(id)) continue;
-      if (!this.myList.includes(item.defId)) continue;
-
-      const dx = item.mesh.position.x - x;
-      const dz = item.mesh.position.z - z;
-      if (Math.hypot(dx, dz) < PICKUP_RADIUS) {
-        this.pendingPickups.add(id);
-        emitPickup(id);
-      }
-    }
+    this.gameScene.render(dt);
   }
 
   updateRemotePlayer(id: string, x: number, z: number, rotY: number) {
-    this.remoteTrolleys.get(id)?.setTargetTransform(x, z, rotY);
+    this.remotePlayers.get(id)?.setTargetTransform(x, z, rotY);
   }
 
   collectItem(itemId: string) {
-    this.items.get(itemId)?.hide();
+    const item = this.items.get(itemId);
+    if (item) {
+      this.orbToItem.delete(item.orbMesh);
+      if (this.hoveredItem === item) {
+        this.hoveredItem = null;
+        this.onHoverChange?.(null);
+      }
+      item.hide();
+    }
     this.pendingPickups.delete(itemId);
   }
 
@@ -170,24 +200,25 @@ export class GameLoop {
     const item = this.items.get(itemId);
     if (item) {
       item.setPosition(x, z);
+      this.orbToItem.set(item.orbMesh, item);
       item.show();
-      this.pendingPickups.delete(itemId);
     }
+    this.pendingPickups.delete(itemId);
   }
 
   respawnItem(itemId: string, x: number, z: number) {
     const item = this.items.get(itemId);
     if (item) {
       item.setPosition(x, z);
+      this.orbToItem.set(item.orbMesh, item);
       item.show();
     }
   }
 
   updateMyList(myList: string[]) {
     this.myList = myList;
-    const myPlayer = [...(this.remoteTrolleys.values())].find(() => false); // unused, just need colorHex
     for (const item of this.items.values()) {
-      item.setHighlight(myList.includes(item.defId), '#ffffff');
+      item.setHighlight(myList.includes(item.defId), this.myColorHex);
     }
   }
 
@@ -196,5 +227,8 @@ export class GameLoop {
     stopBroadcast();
     this.input.destroy();
     this.gameScene.dispose();
+    if (this.player) this.player.remove(this.physics.world);
+    if (this.trolleyFollower) this.trolleyFollower.remove(this.gameScene.scene);
+    for (const t of this.remotePlayers.values()) t.remove(this.gameScene.scene);
   }
 }

@@ -42,4 +42,4 @@ export const JUICE_PUDDLE_COUNT = 5;
 export const JUICE_PUDDLE_RADIUS = 4;
 export const ITEM_RESPAWN_DELAY = 10000;
 
-export const AISLE_Z_POSITIONS = [-30, -10, 10, 30];
+export const AISLE_Z_POSITIONS = [-30, -18, -6, 6, 18];

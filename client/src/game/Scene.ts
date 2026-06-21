@@ -6,18 +6,20 @@ export class GameScene {
   camera: THREE.PerspectiveCamera;
   renderer: THREE.WebGLRenderer;
   labelRenderer: CSS2DRenderer;
-  private shakeOffset = new THREE.Vector3();
-  private shakeDecay = 0;
-  private shakeAmplitude = 0;
+
+  private rightArm!: THREE.Mesh;
+  private grabAnimTimer = 0;
+  private readonly GRAB_DURATION = 0.22;
+  private bobTime = 0;
 
   constructor(canvas: HTMLCanvasElement) {
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x1a0a2e);
-    this.scene.fog = new THREE.Fog(0x1a0a2e, 160, 220);
+    this.scene.background = new THREE.Color(0x2a2030);
+    this.scene.fog = new THREE.Fog(0x2a2030, 18, 55);
 
-    this.camera = new THREE.PerspectiveCamera(55, canvas.clientWidth / canvas.clientHeight, 0.1, 500);
-    this.camera.position.set(0, 90, 60);
-    this.camera.lookAt(0, 0, 0);
+    this.camera = new THREE.PerspectiveCamera(75, canvas.clientWidth / canvas.clientHeight, 0.05, 150);
+    this.camera.rotation.order = 'YXZ';
+    this.scene.add(this.camera); // needed so arm children render
 
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -32,32 +34,79 @@ export class GameScene {
     this.labelRenderer.domElement.style.pointerEvents = 'none';
     canvas.parentElement?.appendChild(this.labelRenderer.domElement);
 
+    this.buildArmMeshes();
     this.setupLighting();
     this.handleResize(canvas);
   }
 
+  private buildArmMeshes() {
+    const skinMat = new THREE.MeshToonMaterial({ color: 0xf5c5a3, depthTest: false });
+    const sleeveMat = new THREE.MeshToonMaterial({ color: 0x4a90d9, depthTest: false });
+
+    // Right forearm
+    const arm = new THREE.Group();
+    const forearm = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.55), sleeveMat);
+    forearm.renderOrder = 999;
+    arm.add(forearm);
+    // Hand at the tip
+    const hand = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.1, 0.12), skinMat);
+    hand.position.z = -0.33;
+    hand.renderOrder = 999;
+    arm.add(hand);
+
+    arm.position.set(0.26, -0.26, -0.35);
+    this.camera.add(arm);
+    this.rightArm = arm as unknown as THREE.Mesh;
+  }
+
   private setupLighting() {
-    this.scene.add(new THREE.AmbientLight(0xfff8f0, 1.4));
-    this.scene.add(new THREE.HemisphereLight(0xffeeff, 0xddffdd, 0.5));
+    this.scene.add(new THREE.AmbientLight(0xffe8d0, 0.45));
+    this.scene.add(new THREE.HemisphereLight(0xfff4e0, 0x404060, 0.3));
+  }
 
-    const sun = new THREE.DirectionalLight(0xfffbe6, 2.2);
-    sun.position.set(30, 60, 30);
-    sun.castShadow = true;
-    sun.shadow.mapSize.set(2048, 2048);
-    sun.shadow.camera.near = 0.5;
-    sun.shadow.camera.far = 300;
-    sun.shadow.camera.left = -80;
-    sun.shadow.camera.right = 80;
-    sun.shadow.camera.top = 80;
-    sun.shadow.camera.bottom = -80;
-    this.scene.add(sun);
+  addAisleLight(x: number, z: number) {
+    const spot = new THREE.SpotLight(0xfff8e8, 2.8, 22, Math.PI / 5, 0.5, 1.2);
+    spot.position.set(x, 5.1, z);
+    spot.target.position.set(x, 0, z);
+    spot.castShadow = false;
+    this.scene.add(spot);
+    this.scene.add(spot.target);
+  }
 
-    const ceilPositions = [[-30, 18, -25], [30, 18, -25], [-30, 18, 25], [30, 18, 25]] as const;
-    for (const [x, y, z] of ceilPositions) {
-      const pt = new THREE.PointLight(0xfff4cc, 1.6, 80);
-      pt.position.set(x, y, z);
-      this.scene.add(pt);
+  triggerGrabAnim() {
+    this.grabAnimTimer = this.GRAB_DURATION;
+  }
+
+  updateCamera(yaw: number, pitch: number, eyePos: THREE.Vector3, isMoving: boolean, dt: number) {
+    this.camera.position.copy(eyePos);
+    this.camera.rotation.y = yaw;
+    this.camera.rotation.x = pitch;
+
+    // Subtle head bob
+    if (isMoving) {
+      this.bobTime += dt * 9;
+      this.camera.position.y += Math.sin(this.bobTime) * 0.028;
+    } else {
+      this.bobTime *= 0.85;
     }
+
+    // Arm grab animation
+    if (this.grabAnimTimer > 0) {
+      this.grabAnimTimer -= dt;
+      const progress = 1 - Math.max(0, this.grabAnimTimer) / this.GRAB_DURATION;
+      const phase = progress < 0.5 ? progress * 2 : (1 - progress) * 2;
+      (this.rightArm as any).position.z = -0.35 - phase * 0.38;
+      (this.rightArm as any).position.y = -0.26 + phase * 0.06;
+    } else {
+      (this.rightArm as any).position.z = -0.35;
+      (this.rightArm as any).position.y = -0.26;
+    }
+  }
+
+  render(dt: number) {
+    void dt;
+    this.renderer.render(this.scene, this.camera);
+    this.labelRenderer.render(this.scene, this.camera);
   }
 
   private handleResize(canvas: HTMLCanvasElement) {
@@ -70,31 +119,6 @@ export class GameScene {
       this.labelRenderer.setSize(w, h);
     });
     ro.observe(canvas);
-  }
-
-  shake(amplitude = 3) {
-    this.shakeAmplitude = amplitude;
-    this.shakeDecay = 0.88;
-  }
-
-  render() {
-    if (this.shakeAmplitude > 0.05) {
-      this.shakeOffset.set(
-        (Math.random() - 0.5) * this.shakeAmplitude,
-        (Math.random() - 0.5) * this.shakeAmplitude * 0.5,
-        0
-      );
-      this.camera.position.x = this.shakeOffset.x;
-      this.camera.position.y = 90 + this.shakeOffset.y;
-      this.shakeAmplitude *= this.shakeDecay;
-    } else {
-      this.camera.position.x = 0;
-      this.camera.position.y = 90;
-      this.shakeAmplitude = 0;
-    }
-
-    this.renderer.render(this.scene, this.camera);
-    this.labelRenderer.render(this.scene, this.camera);
   }
 
   dispose() {

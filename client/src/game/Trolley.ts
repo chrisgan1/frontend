@@ -1,117 +1,56 @@
+// Remote player character mesh — lerped to server position, no physics
 import * as THREE from 'three';
-import * as CANNON from 'cannon-es';
 import { CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
-import type { InputState } from '../types';
-
-const FORCE_BASE = 900;
-const FORCE_SPRINT = 1500;
-const STEER_SPEED = 2.6;
-const LINEAR_DAMP = 0.80;
-const ANG_DAMP = 0.93;
-const SPRINT_LINEAR_DAMP = 0.65;
-const WOBBLE_INTERVAL = 180;
-const TROLLEY_HALF = new CANNON.Vec3(0.55, 0.5, 0.95);
 
 export class Trolley {
-  body: CANNON.Body;
-  mesh: THREE.Group;
   playerId: string;
-  isLocal: boolean;
+  mesh: THREE.Group;
+  // Dummy body so existing code compiles
+  body = {
+    addEventListener: () => {},
+    position: { x: 0, y: 0, z: 0 },
+    velocity: { x: 0, z: 0 },
+  } as any;
 
-  private targetX = 0;
-  private targetZ = 0;
-  private targetRotY = 0;
-  private wobbleTimer = 0;
+  private targetPos = new THREE.Vector3();
+  private targetYaw = 0;
 
   constructor(
     playerId: string,
     color: number,
     colorHex: string,
-    isLocal: boolean,
+    _isLocal: boolean,
     scene: THREE.Scene,
-    world: CANNON.World
+    _world: any
   ) {
     this.playerId = playerId;
-    this.isLocal = isLocal;
-
-    this.body = this.createBody(world);
-    this.mesh = this.createMesh(scene, color, colorHex, isLocal);
+    this.mesh = this.buildMesh(color, colorHex, scene);
   }
 
-  private createBody(world: CANNON.World): CANNON.Body {
-    const mat = new CANNON.Material({ friction: 0.05, restitution: 0.4 });
-    const body = new CANNON.Body({ mass: 40, material: mat });
-    body.addShape(new CANNON.Box(TROLLEY_HALF));
-    body.linearDamping = LINEAR_DAMP;
-    body.angularDamping = ANG_DAMP;
-    body.fixedRotation = false;
-    // Prevent tipping — only rotate on Y
-    body.angularFactor.set(0, 1, 0);
-    if (this.isLocal) world.addBody(body);
-    return body;
-  }
-
-  private createMesh(scene: THREE.Scene, color: number, colorHex: string, isLocal: boolean): THREE.Group {
+  private buildMesh(color: number, colorHex: string, scene: THREE.Scene): THREE.Group {
     const group = new THREE.Group();
     const mat = new THREE.MeshToonMaterial({ color });
-    const grey = new THREE.MeshToonMaterial({ color: 0x888888 });
-    const darkMat = new THREE.MeshToonMaterial({ color: 0x333333 });
+    const skin = new THREE.MeshToonMaterial({ color: 0xf5c5a3 });
 
-    // Basket frame — four sides + bottom
-    const sides: [number, number, number, number, number, number][] = [
-      [0, 0.5, -0.95, 1.1, 0.9, 0.06],  // front
-      [0, 0.5,  0.95, 1.1, 0.9, 0.06],  // back
-      [-0.55, 0.5, 0, 0.06, 0.9, 1.9],  // left
-      [ 0.55, 0.5, 0, 0.06, 0.9, 1.9],  // right
-      [0, 0.06, 0, 1.1, 0.06, 1.9],     // bottom
-    ];
-    for (const [x, y, z, w, h, d] of sides) {
-      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
-      m.position.set(x, y, z);
-      m.castShadow = true;
-      group.add(m);
-    }
+    const add = (geo: THREE.BufferGeometry, m: THREE.Material, x: number, y: number, z: number) => {
+      const mesh = new THREE.Mesh(geo, m);
+      mesh.position.set(x, y, z);
+      mesh.castShadow = true;
+      group.add(mesh);
+    };
 
-    // Handle bar
-    const handle = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.12, 0.12), darkMat);
-    handle.position.set(0, 1.1, 0.9);
-    group.add(handle);
+    add(new THREE.BoxGeometry(0.55, 0.75, 0.28), mat,    0,    0.9, 0);
+    add(new THREE.SphereGeometry(0.24, 8, 6),    skin,   0,    1.62, 0);
+    add(new THREE.BoxGeometry(0.14, 0.55, 0.14), mat,  -0.38, 0.9, 0);
+    add(new THREE.BoxGeometry(0.14, 0.55, 0.14), mat,   0.38, 0.9, 0);
+    add(new THREE.BoxGeometry(0.22, 0.65, 0.22), mat,  -0.14, 0.35, 0);
+    add(new THREE.BoxGeometry(0.22, 0.65, 0.22), mat,   0.14, 0.35, 0);
 
-    // Wheels — one slightly skewed for the wobbly wheel gag
-    const wheelGeo = new THREE.CylinderGeometry(0.22, 0.22, 0.14, 10);
-    const wheelPositions: [number, number, number, number][] = [
-      [-0.55, -0.28, -0.7, 0],
-      [ 0.55, -0.28, -0.7, 0],
-      [-0.55, -0.28,  0.7, 0],
-      [ 0.55, -0.28,  0.7, 8 * (Math.PI / 180)], // slightly skewed wheel
-    ];
-    for (const [x, y, z, skew] of wheelPositions) {
-      const w = new THREE.Mesh(wheelGeo, grey);
-      w.rotation.set(Math.PI / 2, skew, 0);
-      w.position.set(x, y, z);
-      group.add(w);
-    }
-
-    // Glow outline for local player
-    if (isLocal) {
-      const outlineMat = new THREE.MeshBasicMaterial({
-        color: 0xffffff,
-        side: THREE.BackSide,
-        transparent: true,
-        opacity: 0.4,
-      });
-      const outline = new THREE.Mesh(new THREE.BoxGeometry(1.22, 0.92, 2.02), outlineMat);
-      outline.position.set(0, 0.5, 0);
-      group.add(outline);
-    }
-
-    // Name label
     const div = document.createElement('div');
     div.className = 'player-label';
     div.style.color = colorHex;
-    div.textContent = ''; // filled in by GameLoop
     const label = new CSS2DObject(div);
-    label.position.set(0, 1.6, 0);
+    label.position.set(0, 2.05, 0);
     label.name = 'nameLabel';
     group.add(label);
 
@@ -125,81 +64,31 @@ export class Trolley {
   }
 
   setPosition(x: number, z: number) {
-    this.body.position.set(x, 0.5, z);
-    this.mesh.position.set(x, 0.5, z);
-    this.targetX = x;
-    this.targetZ = z;
-  }
-
-  applyInput(input: InputState, dt: number, inPuddle: boolean) {
-    this.wobbleTimer += dt * 1000;
-    if (this.wobbleTimer > WOBBLE_INTERVAL) {
-      this.wobbleTimer = 0;
-      this.body.applyTorque(new CANNON.Vec3(0, (Math.random() - 0.5) * 1.2, 0));
-    }
-
-    const force = input.sprint ? FORCE_SPRINT : FORCE_BASE;
-    if (input.forward !== 0) {
-      this.body.applyLocalForce(
-        new CANNON.Vec3(0, 0, -input.forward * force),
-        CANNON.Vec3.ZERO
-      );
-    }
-
-    if (input.steer !== 0) {
-      this.body.angularVelocity.y = input.steer * STEER_SPEED;
-    }
-
-    this.body.linearDamping = inPuddle ? 0.2 : (input.sprint ? SPRINT_LINEAR_DAMP : LINEAR_DAMP);
-    this.body.angularDamping = inPuddle ? 0.05 : ANG_DAMP;
-  }
-
-  syncMesh() {
-    if (this.isLocal) {
-      this.mesh.position.set(
-        this.body.position.x,
-        this.body.position.y,
-        this.body.position.z
-      );
-      this.mesh.quaternion.set(
-        this.body.quaternion.x,
-        this.body.quaternion.y,
-        this.body.quaternion.z,
-        this.body.quaternion.w
-      );
-    } else {
-      // Lerp remote trolleys to server position
-      this.mesh.position.lerp(new THREE.Vector3(this.targetX, 0.5, this.targetZ), 0.18);
-      const targetQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, this.targetRotY, 0));
-      this.mesh.quaternion.slerp(targetQ, 0.15);
-    }
+    this.mesh.position.set(x, 0, z);
+    this.targetPos.set(x, 0, z);
   }
 
   setTargetTransform(x: number, z: number, rotY: number) {
-    this.targetX = x;
-    this.targetZ = z;
-    this.targetRotY = rotY;
+    this.targetPos.set(x, 0, z);
+    this.targetYaw = rotY;
+  }
+
+  syncMesh() {
+    this.mesh.position.lerp(this.targetPos, 0.16);
+    let diff = this.targetYaw - this.mesh.rotation.y;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    this.mesh.rotation.y += diff * 0.15;
   }
 
   getPosition() {
-    return {
-      x: this.body.position.x,
-      z: this.body.position.z,
-      rotY: Math.atan2(
-        2 * (this.body.quaternion.w * this.body.quaternion.y),
-        1 - 2 * this.body.quaternion.y * this.body.quaternion.y
-      ),
-      vx: this.body.velocity.x,
-      vz: this.body.velocity.z,
-    };
+    return { x: this.targetPos.x, z: this.targetPos.z, rotY: this.targetYaw, vx: 0, vz: 0 };
   }
 
-  getSpeed() {
-    return Math.hypot(this.body.velocity.x, this.body.velocity.z);
-  }
+  getSpeed() { return 0; }
+  applyInput() {}
 
-  remove(scene: THREE.Scene, world: CANNON.World) {
+  remove(scene: THREE.Scene) {
     scene.remove(this.mesh);
-    if (this.isLocal) world.removeBody(this.body);
   }
 }

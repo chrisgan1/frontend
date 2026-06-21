@@ -30,7 +30,7 @@ const PLAYER_COLORS = [
   { value: 0xffa502, hex: '#ffa502' },
 ];
 
-const AISLE_Z_POSITIONS = [-30, -10, 10, 30];
+const AISLE_Z_POSITIONS = [-30, -18, -6, 6, 18];
 const MAP_HALF = 52;
 const LIST_SIZE = 5;
 const GAME_DURATION = 120;

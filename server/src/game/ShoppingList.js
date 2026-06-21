@@ -21,14 +21,13 @@ function generateLists(playerIds) {
 
 function getShelfPositionsForAisle(aisleIdx) {
   const positions = [];
-  const shelfLength = 70;
-  const unitCount = 10;
+  const shelfLength = 84;
+  const unitCount = 6;
   const unitW = shelfLength / unitCount;
   const z = AISLE_Z_POSITIONS[aisleIdx] ?? 0;
 
   for (let i = 0; i < unitCount; i++) {
     const x = -shelfLength / 2 + unitW * (i + 0.5);
-    if (Math.abs(x) < 8 && aisleIdx === 2) continue;
     positions.push({ x, z: z - 2 });
   }
   return positions;
