@@ -156,6 +156,18 @@ export async function draftAnswerFromEvidence(
         "AI drafting is not available right now: the request took too long and was cancelled.",
       );
     }
+    // Live testing also surfaced a third shape: undici's own internal
+    // headers-timeout racing ahead of the SDK's AbortController-based one,
+    // which throws a plain `TypeError: fetch failed` (cause: a
+    // HeadersTimeoutError) rather than an ApiError or AbortError. Rather
+    // than chase every network-layer error class the underlying fetch can
+    // throw, treat any remaining failure from the call the same way: a
+    // provider problem the caller can't do anything about, not a crash.
+    if (err instanceof Error) {
+      throw new DraftUnavailableError(
+        "AI drafting is not available right now: could not reach the AI provider.",
+      );
+    }
     throw err;
   }
 

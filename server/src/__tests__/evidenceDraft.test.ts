@@ -108,4 +108,18 @@ describe("draftAnswerFromEvidence", () => {
       DraftUnavailableError,
     );
   });
+
+  // Regression: live testing also observed a plain `TypeError: fetch failed`
+  // (undici's own internal headers-timeout racing ahead of the SDK's
+  // AbortController-based one) — neither an ApiError nor a named
+  // "AbortError". Any remaining Error from the call must still degrade
+  // cleanly rather than propagate raw.
+  it("converts any other provider error into a DraftUnavailableError", async () => {
+    process.env.GEMINI_API_KEY = "test-key";
+    mockGenerateContent.mockRejectedValue(new TypeError("fetch failed"));
+
+    await expect(draftAnswerFromEvidence("Do you hold ISO 27001?", [])).rejects.toThrow(
+      DraftUnavailableError,
+    );
+  });
 });
