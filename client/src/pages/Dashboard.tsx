@@ -3,17 +3,34 @@ import { Link } from "react-router-dom";
 import { api } from "../api/client.js";
 
 interface DashboardData {
-  totals: {
-    total_controls: number;
-    controls_with_evidence: number;
-    total_policies: number;
-    approved_policies: number;
-    expired_evidence: number;
+  certifications: {
+    id: string;
+    name: string;
+    valid_until: string;
+    status: "valid" | "expiring_soon" | "expired";
+    days_until_expiry: number;
+  }[];
+  headcounts: {
+    total_employees: number;
+    bpss_cleared: number;
+    sc_cleared: number;
+    dv_cleared: number;
   };
-  byCategory: { category: string; total: number; with_evidence: number }[];
-  overdueAttestations: { id: string; title: string; version: number; version_id: string }[];
-  overduePolicies: { id: string; title: string; renewal_date: string }[];
+  supplierPacksGenerated: number;
+  documentsCount: number;
 }
+
+const STATUS_STYLE: Record<string, string> = {
+  valid: "border-slate-200 bg-white",
+  expiring_soon: "border-amber-300 bg-amber-50",
+  expired: "border-red-300 bg-red-50",
+};
+
+const STATUS_LABEL: Record<string, string> = {
+  valid: "✓ Valid until",
+  expiring_soon: "⚠ Expires",
+  expired: "✗ Expired",
+};
 
 export default function Dashboard() {
   const [data, setData] = useState<DashboardData | null>(null);
@@ -26,63 +43,45 @@ export default function Dashboard() {
   if (error) return <p className="p-6 text-red-700">{error}</p>;
   if (!data) return <p className="p-6 text-slate-500">Loading…</p>;
 
-  const posturePct = data.totals.total_controls
-    ? Math.round((data.totals.controls_with_evidence / data.totals.total_controls) * 100)
-    : 0;
-
   return (
     <div className="mx-auto max-w-5xl p-6">
-      <h1 className="mb-6 text-2xl font-semibold text-navy">Compliance Posture</h1>
+      <h1 className="mb-6 text-2xl font-semibold text-navy">Compliance Dashboard</h1>
 
-      <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-4">
-        <Stat label="Controls with evidence" value={`${posturePct}%`} sub={`${data.totals.controls_with_evidence} / ${data.totals.total_controls}`} />
-        <Stat label="Approved policies" value={String(data.totals.approved_policies)} sub={`of ${data.totals.total_policies} total`} />
-        <Stat label="Expired evidence" value={String(data.totals.expired_evidence)} warn={data.totals.expired_evidence > 0} />
-        <Stat label="Overdue attestations" value={String(data.overdueAttestations.length)} warn={data.overdueAttestations.length > 0} />
+      <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-slate-500">Certifications</h2>
+      <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-3">
+        {data.certifications.map((c) => (
+          <div key={c.id} className={`rounded-lg border p-4 ${STATUS_STYLE[c.status]}`}>
+            <p className="text-sm font-medium text-slate-800">{c.name}</p>
+            <p className="text-sm text-slate-600">
+              {STATUS_LABEL[c.status]} {new Date(c.valid_until).toLocaleDateString("en-GB", { month: "long", year: "numeric" })}
+            </p>
+            {c.status === "expiring_soon" && (
+              <p className="text-xs text-amber-700">{c.days_until_expiry} days remaining</p>
+            )}
+          </div>
+        ))}
+        {data.certifications.length === 0 && (
+          <p className="col-span-full text-sm text-slate-400">
+            No certifications tracked yet — add one on the{" "}
+            <Link to="/certifications" className="text-navy underline">Certifications</Link> page.
+          </p>
+        )}
       </div>
 
-      <h2 className="mb-3 text-lg font-medium text-navy">Posture by category</h2>
-      <div className="mb-8 overflow-hidden rounded-lg border border-slate-200">
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-left text-slate-500">
-            <tr>
-              <th className="px-4 py-2">Category</th>
-              <th className="px-4 py-2">Controls with evidence</th>
-              <th className="px-4 py-2">Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.byCategory.map((row) => (
-              <tr key={row.category} className="border-t border-slate-100">
-                <td className="px-4 py-2">{row.category}</td>
-                <td className="px-4 py-2">{row.with_evidence}</td>
-                <td className="px-4 py-2">{row.total}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-slate-500">Personnel & activity</h2>
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+        <Stat label="BPSS Staff" value={String(data.headcounts.bpss_cleared)} sub={`of ${data.headcounts.total_employees}`} />
+        <Stat label="SC Cleared" value={String(data.headcounts.sc_cleared)} />
+        <Stat label="DV Cleared" value={String(data.headcounts.dv_cleared)} />
+        <Stat label="Supplier Packs Generated" value={String(data.supplierPacksGenerated)} />
       </div>
-
-      {data.overduePolicies.length > 0 && (
-        <div className="mb-6">
-          <h2 className="mb-2 text-lg font-medium text-navy">Overdue policy renewals</h2>
-          <ul className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm">
-            {data.overduePolicies.map((p) => (
-              <li key={p.id}>
-                <Link to={`/policies/${p.id}`} className="text-amber-900 underline">{p.title}</Link>
-                {" "}— due {p.renewal_date}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
     </div>
   );
 }
 
-function Stat({ label, value, sub, warn }: { label: string; value: string; sub?: string; warn?: boolean }) {
+function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
-    <div className={`rounded-lg border p-4 ${warn ? "border-amber-300 bg-amber-50" : "border-slate-200 bg-white"}`}>
+    <div className="rounded-lg border border-slate-200 bg-white p-4">
       <p className="text-xs uppercase tracking-wide text-slate-500">{label}</p>
       <p className="text-2xl font-semibold text-navy">{value}</p>
       {sub && <p className="text-xs text-slate-400">{sub}</p>}

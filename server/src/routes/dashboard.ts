@@ -4,47 +4,33 @@ import { requireAuth } from "../middleware/auth.js";
 
 export const dashboardRouter = Router();
 
+const EXPIRING_SOON_DAYS = 45;
+
 dashboardRouter.get("/dashboard", requireAuth, async (_req, res) => {
-  const [totals, byCategory, overdueAttestations, overduePolicies] = await Promise.all([
+  const [certifications, headcounts, packCount, docCount] = await Promise.all([
+    pool.query(`SELECT id, name, valid_until FROM certifications ORDER BY valid_until ASC`),
     pool.query(`
       SELECT
-        (SELECT count(*)::int FROM controls) AS total_controls,
-        (SELECT count(DISTINCT control_id)::int FROM evidence_control_map) AS controls_with_evidence,
-        (SELECT count(*)::int FROM policies) AS total_policies,
-        (SELECT count(*)::int FROM policies WHERE status = 'approved') AS approved_policies,
-        (SELECT count(*)::int FROM evidence WHERE expires_at IS NOT NULL AND expires_at < current_date) AS expired_evidence
+        count(*)::int AS total_employees,
+        count(*) FILTER (WHERE bpss_cleared)::int AS bpss_cleared,
+        count(*) FILTER (WHERE sc_status = 'granted' AND (sc_expiry IS NULL OR sc_expiry >= current_date))::int AS sc_cleared,
+        count(*) FILTER (WHERE dv_status = 'granted' AND (dv_expiry IS NULL OR dv_expiry >= current_date))::int AS dv_cleared
+      FROM employees
     `),
-    pool.query(`
-      SELECT c.category,
-             count(*)::int AS total,
-             count(m.control_id)::int AS with_evidence
-      FROM controls c
-      LEFT JOIN (SELECT DISTINCT control_id FROM evidence_control_map) m ON m.control_id = c.id
-      GROUP BY c.category
-      ORDER BY c.category
-    `),
-    pool.query(`
-      SELECT p.id, p.title, pv.version, pv.id AS version_id
-      FROM policies p
-      JOIN policy_versions pv ON pv.policy_id = p.id AND pv.version = (
-        SELECT max(version) FROM policy_versions WHERE policy_id = p.id
-      )
-      WHERE p.status = 'approved'
-      AND NOT EXISTS (
-        SELECT 1 FROM attestations a WHERE a.policy_version_id = pv.id
-      )
-    `),
-    pool.query(`
-      SELECT id, title, renewal_date FROM policies
-      WHERE renewal_date IS NOT NULL AND renewal_date < current_date
-      ORDER BY renewal_date
-    `),
+    pool.query(`SELECT count(*)::int AS n FROM supplier_pack_generations`),
+    pool.query(`SELECT count(*)::int AS n FROM documents`),
   ]);
 
+  const certsWithStatus = certifications.rows.map((row) => {
+    const daysUntil = Math.ceil((new Date(row.valid_until).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+    const status = daysUntil < 0 ? "expired" : daysUntil <= EXPIRING_SOON_DAYS ? "expiring_soon" : "valid";
+    return { ...row, status, days_until_expiry: daysUntil };
+  });
+
   res.json({
-    totals: totals.rows[0],
-    byCategory: byCategory.rows,
-    overdueAttestations: overdueAttestations.rows,
-    overduePolicies: overduePolicies.rows,
+    certifications: certsWithStatus,
+    headcounts: headcounts.rows[0],
+    supplierPacksGenerated: packCount.rows[0].n,
+    documentsCount: docCount.rows[0].n,
   });
 });

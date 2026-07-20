@@ -2,9 +2,12 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import { authRouter } from "./routes/auth.js";
-import { controlsRouter } from "./routes/controls.js";
-import { evidenceRouter } from "./routes/evidence.js";
-import { policiesRouter } from "./routes/policies.js";
+import { documentsRouter } from "./routes/documents.js";
+import { certificationsRouter } from "./routes/certifications.js";
+import { employeesRouter } from "./routes/employees.js";
+import { projectsRouter } from "./routes/projects.js";
+import { companyProfileRouter } from "./routes/company-profile.js";
+import { supplierPackRouter } from "./routes/supplier-pack.js";
 import { dashboardRouter } from "./routes/dashboard.js";
 import { auditRouter } from "./routes/audit.js";
 
@@ -16,9 +19,12 @@ app.use(express.json());
 app.get("/api/health", (_req, res) => res.json({ status: "ok" }));
 
 app.use("/api/auth", authRouter);
-app.use("/api", controlsRouter);
-app.use("/api", evidenceRouter);
-app.use("/api", policiesRouter);
+app.use("/api", documentsRouter);
+app.use("/api", certificationsRouter);
+app.use("/api", employeesRouter);
+app.use("/api", projectsRouter);
+app.use("/api", companyProfileRouter);
+app.use("/api", supplierPackRouter);
 app.use("/api", dashboardRouter);
 app.use("/api", auditRouter);
 

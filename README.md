@@ -1,50 +1,65 @@
-# MOD Compliance Platform (MVP)
+# Defence Compliance Evidence Hub (V1 MVP)
 
-A GRC (governance, risk, assurance) tool for demonstrating compliance
-against MOD supplier security standards. This is a **core skeleton**, not
-the full platform described in the original capability spec — see
-[Roadmap](#roadmap--phase-2) below for what's deliberately out of scope.
+A pain-focused MVP for defence SMEs: stop digging through SharePoint every
+time a prime asks "do you have Cyber Essentials Plus, insurance, and
+BPSS-cleared staff?" This is deliberately narrow — a validation vehicle to
+show ~20 defence SMEs and see whether "would this save you time every
+week?" gets a "can I start using this next month?" response, not a full
+GRC platform.
 
 ## What's here
 
-- **Control library** seeded with a representative set of controls inspired
-  by **DEFSTAN 05-138** (Cyber Security for Defence Suppliers), grouped by
-  category and risk-based profile level (very low / low / moderate / high).
-  This is **not** a verbatim reproduction of the official standard — swap
-  `server/src/seed/defstan-05-138.ts` for the licensed control text before
-  any real use.
-- **Evidence management** — upload artefacts and map them to one or more
-  controls, with basic versioning and expiry tracking.
-- **Policy lifecycle** — draft, version, approve, and attest to policies.
-- **Compliance posture dashboard** — % of controls with evidence, overdue
-  attestations, overdue policy renewals, breakdown by category.
+- **Document vault** — upload certs/policies/insurance/evidence, tag each
+  with a category (Security, Quality, Insurance, People, Export Control).
+- **Certification tracking** — named certs (Cyber Essentials Plus, ISO
+  27001, insurance, etc.) with valid-until dates and a computed status:
+  valid / expiring soon (≤45 days) / expired.
+- **Security clearance tracker** — employees with BPSS/SC/DV status and
+  expiry, plus **project matching**: pick a project and its required
+  clearance level, instantly see who's eligible (and not expired).
+- **Supplier pack generator** — one click produces a ZIP with a dated
+  cover-sheet PDF (company profile, certification summary, clearance
+  headcounts — not individual names) plus copies of the underlying
+  certificate/policy documents, ready to send to a prime.
+- **Dashboard** — certification status tiles, BPSS/SC/DV headcounts,
+  supplier packs generated counter.
 - **RBAC** — Admin, Compliance Manager, Contributor, Auditor (read-only).
-- **Audit trail** — every control/evidence/policy mutation is logged and
-  visible on the relevant control/policy detail page.
+- **Audit trail** — logged server-side for every mutation (not currently
+  surfaced in the UI — this build keeps the UI to just the four features
+  above, per the "MVP not platform" brief).
 
 ## Stack
 
 - Client: React + TypeScript + Vite + Tailwind
-- Server: Node.js + TypeScript + Express + PostgreSQL (`pg`, no ORM —
-  plain SQL migrations in `server/migrations/`)
-- Auth: JWT + bcrypt. **Not production-grade** — see Roadmap.
+- Server: Node.js + TypeScript + Express + PostgreSQL (plain SQL
+  migrations in `server/migrations/`, no ORM)
+- Supplier pack: `pdfkit` for the cover sheet, `archiver` for the ZIP
+- Auth: JWT + bcrypt. **Not production-grade** — fine for a demo, would
+  need SSO/MFA for real MOD-supplier use.
 
 ## Setup
 
-Requires Node 18+ and a running PostgreSQL instance.
+Requires Node 18+ and PostgreSQL.
 
 ```bash
 createdb mod_compliance
-npm run install:all   # or: npm install
+npm install
 cp server/.env.example server/.env   # edit DATABASE_URL/JWT_SECRET
 npm run migrate
-npm run seed           # loads the DEFSTAN 05-138 control set
-npm run dev             # server on :3001, client on :5173 (proxies /api)
+npm run seed    # loads a fictional demo company ("Acme Defence Engineering Ltd")
+npm run dev      # server on :3001, client on :5173 (proxies /api)
 ```
 
-Register the first account from the login screen — it automatically
-becomes `admin`. Every subsequent account must be created by an admin via
-`POST /api/auth/register` with an admin bearer token.
+The seed script prints a login (`demo.admin@acmedefence.example` /
+`password123`) with a fictional company, certifications (including one
+expiring in ~45 days, to show the warning state), employees across every
+clearance level, and two demo projects — enough to run a full walkthrough
+without manual data entry. All of it is fictional placeholder data, not a
+real company or real personnel records.
+
+Register your own account from the login screen — the first account
+becomes `admin` automatically; further accounts must be created by an
+admin via `POST /api/auth/register` with an admin bearer token.
 
 Run the backend test suite (spins up a throwaway `mod_compliance_test`
 database and re-applies migrations against it):
@@ -54,23 +69,14 @@ createdb mod_compliance_test
 npm test
 ```
 
-## Roadmap / Phase 2+
+## What's deliberately not built
 
-Deliberately **not** built in this pass — these were in the original
-capability spec but are each substantial workstreams of their own:
-
-- Supplier assurance scoring and monitoring
-- Risk register / threat modelling, and incident response linkage
-- Continuous automated control monitoring
-- Regulatory change monitoring/alerts
-- Export control (ITAR/EAR) tracking
-- Chain-of-custody tracking
-- Air-gapped / sovereign deployment packaging
-- Training tracking beyond policy attestation
-- SIEM / HR / procurement / ticketing integrations
-- SSO/MFA (Entra ID or PKI-based) — current auth is email/password + JWT,
-  fine for a demo, not for real MOD-supplier use
-- Personnel security: SC/DV clearance tracking, List X site management
-- Evidence storage hardening: the current storage adapter writes to local
-  disk (`server/uploads`); production use needs immutable/WORM object
-  storage (S3/Azure Blob with object lock)
+This is the sharp end of the wedge, not the platform. Cut from an earlier,
+broader GRC-platform pass and not brought forward here: framework/control
+libraries (DEFSTAN-style control mapping), formal policy version/approval
+lifecycles, supplier assurance scoring, risk registers, incident
+management, continuous control monitoring, regulatory change alerts,
+export control (ITAR/EAR) tracking, chain-of-custody, air-gapped hosting,
+SIEM/HR/procurement integrations, and email expiry reminders (the
+dashboard's status badges cover the same signal for now; real reminders
+need SMTP/domain setup that doesn't serve a demo).

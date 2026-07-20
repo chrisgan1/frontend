@@ -10,10 +10,12 @@ export default function Navbar() {
   return (
     <nav className="bg-navy text-white px-6 py-3 flex items-center justify-between">
       <div className="flex items-center gap-6">
-        <span className="font-semibold tracking-wide">MOD Compliance</span>
+        <span className="font-semibold tracking-wide">Defence Compliance Evidence Hub</span>
         <Link to="/" className="text-sm text-slate-200 hover:text-white">Dashboard</Link>
-        <Link to="/controls" className="text-sm text-slate-200 hover:text-white">Controls</Link>
-        <Link to="/policies" className="text-sm text-slate-200 hover:text-white">Policies</Link>
+        <Link to="/documents" className="text-sm text-slate-200 hover:text-white">Document Vault</Link>
+        <Link to="/certifications" className="text-sm text-slate-200 hover:text-white">Certifications</Link>
+        <Link to="/clearance" className="text-sm text-slate-200 hover:text-white">Clearance Tracker</Link>
+        <Link to="/supplier-pack" className="text-sm text-slate-200 hover:text-white">Supplier Pack</Link>
       </div>
       <div className="flex items-center gap-4 text-sm text-slate-200">
         <span>{user.name} · {user.role.replace("_", " ")}</span>
