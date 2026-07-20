@@ -155,13 +155,89 @@ describe("clearance tracking and project matching", () => {
   });
 });
 
-describe("supplier pack generation", () => {
-  it("generates a downloadable ZIP and logs the generation", async () => {
-    const before = await request(app).get("/api/dashboard").set("Authorization", `Bearer ${adminToken}`);
-    const countBefore = before.body.supplierPacksGenerated;
-
+describe("compliance passport", () => {
+  it("adds a confirmed passport entry", async () => {
     const res = await request(app)
-      .post("/api/supplier-pack/generate")
+      .post("/api/passport")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        topic: "Security",
+        question: "Do you hold Cyber Essentials Plus certification?",
+        answer: "Yes, valid until June 2027.",
+      });
+    expect(res.status).toBe(201);
+    expect(res.body.entry.status).toBe("confirmed");
+  });
+
+  it("blocks an auditor from adding a passport entry", async () => {
+    const res = await request(app)
+      .post("/api/passport")
+      .set("Authorization", `Bearer ${auditorToken}`)
+      .send({ topic: "Security", question: "Should be blocked?", answer: "n/a" });
+    expect(res.status).toBe(403);
+  });
+});
+
+describe("requests: matching an incoming questionnaire to the passport", () => {
+  let requestId: string;
+
+  it("creates a request", async () => {
+    const res = await request(app)
+      .post("/api/requests")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ requesterName: "Test Prime Ltd" });
+    expect(res.status).toBe(201);
+    requestId = res.body.request.id;
+  });
+
+  it("suggests a passport match for a differently-worded question", async () => {
+    const res = await request(app)
+      .post(`/api/requests/${requestId}/items`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        questions: [
+          "Please confirm if you hold Cyber Essentials Plus certification",
+          "What is your company's favourite colour scheme for branding purposes",
+        ],
+      });
+    expect(res.status).toBe(201);
+    const [strongMatch, noMatch] = res.body.items;
+    expect(strongMatch.status).toBe("suggested");
+    expect(strongMatch.suggested_question).toContain("Cyber Essentials Plus");
+    expect(noMatch.status).toBe("unmatched");
+  });
+
+  it("confirms a suggested match and reflects it in the request detail", async () => {
+    const detail = await request(app)
+      .get(`/api/requests/${requestId}`)
+      .set("Authorization", `Bearer ${adminToken}`);
+    const item = detail.body.items.find((i: any) => i.status === "suggested");
+
+    const confirm = await request(app)
+      .patch(`/api/requests/${requestId}/items/${item.id}`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ matchedQaEntryId: item.suggested_qa_entry_id });
+    expect(confirm.status).toBe(200);
+    expect(confirm.body.item.status).toBe("confirmed");
+  });
+
+  it("writes a custom answer for an unmatched item", async () => {
+    const detail = await request(app)
+      .get(`/api/requests/${requestId}`)
+      .set("Authorization", `Bearer ${adminToken}`);
+    const item = detail.body.items.find((i: any) => i.status === "unmatched");
+
+    const confirm = await request(app)
+      .patch(`/api/requests/${requestId}/items/${item.id}`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ customAnswer: "Not applicable to this request." });
+    expect(confirm.status).toBe(200);
+    expect(confirm.body.item.custom_answer).toBe("Not applicable to this request.");
+  });
+
+  it("exports the request as a ZIP and logs it, moving status to submitted", async () => {
+    const res = await request(app)
+      .post(`/api/requests/${requestId}/export`)
       .set("Authorization", `Bearer ${adminToken}`)
       .buffer(true)
       .parse((response, callback) => {
@@ -175,7 +251,9 @@ describe("supplier pack generation", () => {
     expect(Buffer.isBuffer(res.body)).toBe(true);
     expect(res.body.length).toBeGreaterThan(0);
 
-    const after = await request(app).get("/api/dashboard").set("Authorization", `Bearer ${adminToken}`);
-    expect(after.body.supplierPacksGenerated).toBe(countBefore + 1);
+    const detail = await request(app)
+      .get(`/api/requests/${requestId}`)
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(detail.body.request.status).toBe("submitted");
   });
 });

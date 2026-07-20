@@ -7,7 +7,8 @@ import { certificationsRouter } from "./routes/certifications.js";
 import { employeesRouter } from "./routes/employees.js";
 import { projectsRouter } from "./routes/projects.js";
 import { companyProfileRouter } from "./routes/company-profile.js";
-import { supplierPackRouter } from "./routes/supplier-pack.js";
+import { passportRouter } from "./routes/passport.js";
+import { requestsRouter } from "./routes/requests.js";
 import { dashboardRouter } from "./routes/dashboard.js";
 import { auditRouter } from "./routes/audit.js";
 
@@ -24,7 +25,8 @@ app.use("/api", certificationsRouter);
 app.use("/api", employeesRouter);
 app.use("/api", projectsRouter);
 app.use("/api", companyProfileRouter);
-app.use("/api", supplierPackRouter);
+app.use("/api", passportRouter);
+app.use("/api", requestsRouter);
 app.use("/api", dashboardRouter);
 app.use("/api", auditRouter);
 

@@ -6,7 +6,9 @@ import Dashboard from "./pages/Dashboard.js";
 import DocumentVault from "./pages/DocumentVault.js";
 import Certifications from "./pages/Certifications.js";
 import ClearanceTracker from "./pages/ClearanceTracker.js";
-import SupplierPack from "./pages/SupplierPack.js";
+import Passport from "./pages/Passport.js";
+import Requests from "./pages/Requests.js";
+import RequestDetail from "./pages/RequestDetail.js";
 
 export default function App() {
   return (
@@ -15,10 +17,12 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/" element={<RequireAuth><Dashboard /></RequireAuth>} />
+        <Route path="/passport" element={<RequireAuth><Passport /></RequireAuth>} />
+        <Route path="/requests" element={<RequireAuth><Requests /></RequireAuth>} />
+        <Route path="/requests/:id" element={<RequireAuth><RequestDetail /></RequireAuth>} />
         <Route path="/documents" element={<RequireAuth><DocumentVault /></RequireAuth>} />
         <Route path="/certifications" element={<RequireAuth><Certifications /></RequireAuth>} />
         <Route path="/clearance" element={<RequireAuth><ClearanceTracker /></RequireAuth>} />
-        <Route path="/supplier-pack" element={<RequireAuth><SupplierPack /></RequireAuth>} />
       </Routes>
     </div>
   );

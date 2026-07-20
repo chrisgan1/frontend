@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import bcrypt from "bcryptjs";
 import { pool } from "../db/pool.js";
+import { bestMatch } from "../utils/match.js";
 
 // Entirely fictional demo company/people/data, for demoing the product to
 // prospects — not real certificates, not real personnel records.
@@ -109,8 +110,114 @@ async function seed() {
     }
   }
 
+  const passportToInsert: { topic: string; question: string; answer: string; docFile?: string }[] = [
+    {
+      topic: "Security",
+      question: "Do you hold Cyber Essentials Plus certification?",
+      answer: "Yes, Acme Defence Engineering holds Cyber Essentials Plus, valid until 15 June 2027.",
+      docFile: "cyber-essentials-plus.txt",
+    },
+    {
+      topic: "Security",
+      question: "Do you hold ISO 27001 certification?",
+      answer: "Yes, certified to ISO/IEC 27001:2022, valid until 10 May 2027.",
+      docFile: "iso-27001.txt",
+    },
+    {
+      topic: "Insurance",
+      question: "Do you hold Public and Product Liability insurance? What is the level of cover?",
+      answer: "Yes, Public & Product Liability insurance is held with cover valid until 1 September 2026.",
+      docFile: "insurance-certificate.txt",
+    },
+    {
+      topic: "People",
+      question: "How many staff hold BPSS clearance?",
+      answer: "5 of our 6 engineering and delivery staff hold BPSS clearance.",
+    },
+    {
+      topic: "People",
+      question: "How many staff hold active SC clearance?",
+      answer: "3 staff currently hold active SC clearance, sponsored via DE&S Abbey Wood and MOD Corsham.",
+    },
+    {
+      topic: "People",
+      question: "Do you have any DV cleared staff?",
+      answer: "Yes, 1 member of staff holds active DV clearance, sponsored via MOD Corsham.",
+    },
+    {
+      topic: "Quality",
+      question: "Do you operate a documented quality management system?",
+      answer: "Yes, our quality management policy documents our approach and is reviewed annually.",
+      docFile: "quality-policy.txt",
+    },
+    {
+      topic: "Export Control",
+      question: "Do you have a process for identifying and complying with export control (ITAR/EAR) obligations?",
+      answer: "Yes — export-controlled items and technical data transfers are reviewed by our compliance lead prior to shipment, in line with UK strategic export control legislation.",
+    },
+    {
+      topic: "Data Protection",
+      question: "Are you GDPR / UK Data Protection Act compliant? Do you have a data protection policy?",
+      answer: "Yes, we maintain a documented data protection policy and process personal data in line with UK GDPR.",
+    },
+    {
+      topic: "Modern Slavery",
+      question: "Do you have a Modern Slavery statement or policy?",
+      answer: "Yes, our Modern Slavery and Human Trafficking statement is reviewed annually and available on request.",
+    },
+    {
+      topic: "Financial",
+      question: "Can you provide evidence of financial stability (accounts, credit rating)?",
+      answer: "Latest filed accounts and a current credit reference are available on request from our finance team.",
+    },
+  ];
+
+  const qaIds: { id: string; question: string }[] = [];
+  for (const p of passportToInsert) {
+    const { rows } = await pool.query(
+      `INSERT INTO qa_entries (topic, question, answer, status) VALUES ($1, $2, $3, 'confirmed') RETURNING id, question`,
+      [p.topic, p.question, p.answer],
+    );
+    qaIds.push(rows[0]);
+    if (p.docFile) {
+      await pool.query(
+        `INSERT INTO qa_entry_evidence (qa_entry_id, document_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+        [rows[0].id, documentIds[p.docFile]],
+      );
+    }
+  }
+
+  const requestResult = await pool.query(
+    `INSERT INTO requests (requester_name, requester_contact, due_date, created_by) VALUES ($1, $2, $3, $4) RETURNING id`,
+    ["Northbridge Systems Ltd", "procurement@northbridge.example", "2026-08-15", userId],
+  );
+  const requestId = requestResult.rows[0].id;
+
+  // Deliberately phrased differently from the passport questions (and one
+  // with no good match) to demonstrate the matching, not just exact-string lookup.
+  const incomingQuestions = [
+    "Please confirm if you hold Cyber Essentials Plus certification",
+    "Provide details of your insurance cover, including public liability",
+    "How many personnel have Security Check (SC) clearance?",
+    "Confirm number of staff with baseline BPSS clearance",
+    "Do you have ITAR / export control procedures in place?",
+    "Outline your approach to General Data Protection Regulation compliance",
+    "Provide your latest set of audited accounts",
+  ];
+  let sortOrder = 0;
+  for (const questionText of incomingQuestions) {
+    const match = bestMatch(questionText, qaIds);
+    await pool.query(
+      `INSERT INTO request_items (request_id, question_text, suggested_qa_entry_id, suggested_score, status, sort_order)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [requestId, questionText, match.id, match.score, match.id ? "suggested" : "unmatched", sortOrder],
+    );
+    sortOrder += 1;
+  }
+
   console.log(`Seeded demo company "Acme Defence Engineering Ltd".`);
   console.log(`Log in with: ${email} / ${password}`);
+  console.log(`Seeded ${passportToInsert.length} passport answers and a demo request from Northbridge Systems Ltd.`);
   await pool.end();
 }
 

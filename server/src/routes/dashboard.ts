@@ -7,7 +7,7 @@ export const dashboardRouter = Router();
 const EXPIRING_SOON_DAYS = 45;
 
 dashboardRouter.get("/dashboard", requireAuth, async (_req, res) => {
-  const [certifications, headcounts, packCount, docCount] = await Promise.all([
+  const [certifications, headcounts, passportCount, requestCounts, docCount] = await Promise.all([
     pool.query(`SELECT id, name, valid_until FROM certifications ORDER BY valid_until ASC`),
     pool.query(`
       SELECT
@@ -17,7 +17,13 @@ dashboardRouter.get("/dashboard", requireAuth, async (_req, res) => {
         count(*) FILTER (WHERE dv_status = 'granted' AND (dv_expiry IS NULL OR dv_expiry >= current_date))::int AS dv_cleared
       FROM employees
     `),
-    pool.query(`SELECT count(*)::int AS n FROM supplier_pack_generations`),
+    pool.query(`SELECT count(*)::int AS n FROM qa_entries`),
+    pool.query(`
+      SELECT
+        count(*) FILTER (WHERE status = 'open')::int AS open,
+        count(*) FILTER (WHERE status = 'submitted')::int AS submitted
+      FROM requests
+    `),
     pool.query(`SELECT count(*)::int AS n FROM documents`),
   ]);
 
@@ -30,7 +36,9 @@ dashboardRouter.get("/dashboard", requireAuth, async (_req, res) => {
   res.json({
     certifications: certsWithStatus,
     headcounts: headcounts.rows[0],
-    supplierPacksGenerated: packCount.rows[0].n,
+    passportEntryCount: passportCount.rows[0].n,
+    openRequests: requestCounts.rows[0].open,
+    submittedRequests: requestCounts.rows[0].submitted,
     documentsCount: docCount.rows[0].n,
   });
 });

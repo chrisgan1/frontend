@@ -16,7 +16,9 @@ interface DashboardData {
     sc_cleared: number;
     dv_cleared: number;
   };
-  supplierPacksGenerated: number;
+  passportEntryCount: number;
+  openRequests: number;
+  submittedRequests: number;
   documentsCount: number;
 }
 
@@ -68,12 +70,19 @@ export default function Dashboard() {
         )}
       </div>
 
-      <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-slate-500">Personnel & activity</h2>
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+      <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-slate-500">Personnel</h2>
+      <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-4">
         <Stat label="BPSS Staff" value={String(data.headcounts.bpss_cleared)} sub={`of ${data.headcounts.total_employees}`} />
         <Stat label="SC Cleared" value={String(data.headcounts.sc_cleared)} />
         <Stat label="DV Cleared" value={String(data.headcounts.dv_cleared)} />
-        <Stat label="Supplier Packs Generated" value={String(data.supplierPacksGenerated)} />
+        <Stat label="Documents in vault" value={String(data.documentsCount)} />
+      </div>
+
+      <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-slate-500">Passport & requests</h2>
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
+        <Stat label="Passport Answers" value={String(data.passportEntryCount)} />
+        <Stat label="Open Requests" value={String(data.openRequests)} />
+        <Stat label="Requests Submitted" value={String(data.submittedRequests)} />
       </div>
     </div>
   );
