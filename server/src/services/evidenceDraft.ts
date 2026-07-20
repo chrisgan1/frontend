@@ -48,6 +48,11 @@ const MODEL = "gemini-flash-latest";
 
 const TRANSIENT_STATUSES = new Set([429, 503]);
 const RETRY_DELAY_MS = 1500;
+// The SDK has no default request timeout — a stalled connection to Gemini
+// (observed directly: one request hung indefinitely rather than erroring)
+// would otherwise leave the caller's request, and the user's browser,
+// waiting forever.
+const REQUEST_TIMEOUT_MS = 30000;
 
 export interface EvidenceDoc {
   id: string;
@@ -103,6 +108,7 @@ export async function draftAnswerFromEvidence(
       systemInstruction: SYSTEM_PROMPT,
       responseMimeType: "application/json",
       responseJsonSchema: RESPONSE_JSON_SCHEMA,
+      httpOptions: { timeout: REQUEST_TIMEOUT_MS },
     },
   };
 
@@ -136,6 +142,19 @@ export async function draftAnswerFromEvidence(
               ? "the model is temporarily overloaded — try again shortly"
               : `provider error (status ${err.status})`;
       throw new DraftUnavailableError(`AI drafting is not available right now: ${reason}.`);
+    }
+    // A timed-out request aborts the underlying fetch, which rejects with a
+    // DOMException named "AbortError" — not an ApiError, since the request
+    // never got an HTTP response to derive a status from. Confirmed by
+    // reading the SDK's compiled apiCall/includeExtraHttpOptionsToRequestInit
+    // (node_modules/@google/genai/dist/index.mjs): no retryOptions are
+    // configured here, so apiCall is a bare `fetch(url, requestInit)`, and
+    // the AbortController set up from httpOptions.timeout aborts that
+    // fetch's signal directly.
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new DraftUnavailableError(
+        "AI drafting is not available right now: the request took too long and was cancelled.",
+      );
     }
     throw err;
   }

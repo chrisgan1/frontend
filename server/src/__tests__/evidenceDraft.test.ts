@@ -92,4 +92,20 @@ describe("draftAnswerFromEvidence", () => {
       DraftUnavailableError,
     );
   });
+
+  // Regression: a request that exceeds httpOptions.timeout aborts the
+  // underlying fetch, which rejects with a DOMException named "AbortError" —
+  // not an ApiError (there's no HTTP response to derive a status from).
+  // Confirmed directly by inspecting the SDK's compiled apiCall/
+  // includeExtraHttpOptionsToRequestInit in node_modules/@google/genai/dist.
+  it("converts a request timeout (AbortError) into a DraftUnavailableError", async () => {
+    process.env.GEMINI_API_KEY = "test-key";
+    const abortError = new Error("This operation was aborted");
+    abortError.name = "AbortError";
+    mockGenerateContent.mockRejectedValue(abortError);
+
+    await expect(draftAnswerFromEvidence("Do you hold ISO 27001?", [])).rejects.toThrow(
+      DraftUnavailableError,
+    );
+  });
 });

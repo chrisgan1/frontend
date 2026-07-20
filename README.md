@@ -63,7 +63,7 @@ your files for you."
 - Matching: deterministic Jaccard word-overlap scoring, not an LLM call —
   transparent and free to run
 - AI drafting: `@google/genai` (Gemini Developer API, free tier), model
-  `gemini-2.5-flash`, structured JSON output
+  `gemini-flash-latest`, structured JSON output
   (`server/src/services/evidenceDraft.ts`) — a single call per draft
   request, not an agent loop
 - Export: `pdfkit` for the response PDF, `archiver` for the ZIP
