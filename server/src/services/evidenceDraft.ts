@@ -40,7 +40,14 @@ When you do have supporting evidence: keep the answer concise (2-4 sentences), f
 
 Respond with JSON matching the provided schema only — no other text.`;
 
-const MODEL = "gemini-2.5-flash";
+// "-latest" alias rather than a dated model ID: Gemini's dated model IDs
+// retire faster than this codebase gets touched (gemini-2.5-flash, current
+// at the time this was first written, was already rejected as "no longer
+// available to new users" by the time this was live-tested days later).
+const MODEL = "gemini-flash-latest";
+
+const TRANSIENT_STATUSES = new Set([429, 503]);
+const RETRY_DELAY_MS = 1500;
 
 export interface EvidenceDoc {
   id: string;
@@ -89,17 +96,32 @@ export async function draftAnswerFromEvidence(
 
   contents.push({ text: `Question: ${question}` });
 
+  const generationRequest = {
+    model: MODEL,
+    contents,
+    config: {
+      systemInstruction: SYSTEM_PROMPT,
+      responseMimeType: "application/json",
+      responseJsonSchema: RESPONSE_JSON_SCHEMA,
+    },
+  };
+
   let response;
   try {
-    response = await ai.models.generateContent({
-      model: MODEL,
-      contents,
-      config: {
-        systemInstruction: SYSTEM_PROMPT,
-        responseMimeType: "application/json",
-        responseJsonSchema: RESPONSE_JSON_SCHEMA,
-      },
-    });
+    // Gemini's free-tier flash model returns a transient 503 ("high demand")
+    // often enough in practice that a single retry meaningfully improves
+    // success rate — observed directly while testing this against the live
+    // API, not a speculative concern.
+    try {
+      response = await ai.models.generateContent(generationRequest);
+    } catch (err) {
+      if (err instanceof ApiError && TRANSIENT_STATUSES.has(err.status)) {
+        await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+        response = await ai.models.generateContent(generationRequest);
+      } else {
+        throw err;
+      }
+    }
   } catch (err) {
     // Any Gemini-side failure (bad key, rate limit, quota, service outage)
     // should degrade to a clear error, not crash the request — the caller's
@@ -110,7 +132,9 @@ export async function draftAnswerFromEvidence(
           ? "invalid or missing API credentials"
           : err.status === 429
             ? "rate limit or quota exceeded"
-            : `provider error (status ${err.status})`;
+            : err.status === 503
+              ? "the model is temporarily overloaded — try again shortly"
+              : `provider error (status ${err.status})`;
       throw new DraftUnavailableError(`AI drafting is not available right now: ${reason}.`);
     }
     throw err;

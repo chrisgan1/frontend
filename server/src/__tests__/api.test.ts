@@ -234,19 +234,26 @@ describe("requests: matching an incoming questionnaire to the passport", () => {
   });
 
   it("fails clearly (not a crash) when no AI provider is configured", async () => {
-    // This test environment has no GEMINI_API_KEY set, which is the real
-    // out-of-the-box state for anyone who hasn't configured the feature —
-    // it should degrade to a clear error, not a 500 or an unhandled crash.
-    const detail = await request(app)
-      .get(`/api/requests/${requestId}`)
-      .set("Authorization", `Bearer ${adminToken}`);
-    const item = detail.body.items.find((i: any) => i.status === "unmatched");
+    // Explicitly unset for this test rather than relying on the ambient
+    // environment being key-free — a developer's local server/.env (used
+    // for real live testing) can easily have a real key set, and this test
+    // must still exercise the "not configured" path regardless.
+    const savedKey = process.env.GEMINI_API_KEY;
+    delete process.env.GEMINI_API_KEY;
+    try {
+      const detail = await request(app)
+        .get(`/api/requests/${requestId}`)
+        .set("Authorization", `Bearer ${adminToken}`);
+      const item = detail.body.items.find((i: any) => i.status === "unmatched");
 
-    const res = await request(app)
-      .post(`/api/requests/${requestId}/items/${item.id}/draft`)
-      .set("Authorization", `Bearer ${adminToken}`);
-    expect(res.status).toBe(502);
-    expect(typeof res.body.error).toBe("string");
+      const res = await request(app)
+        .post(`/api/requests/${requestId}/items/${item.id}/draft`)
+        .set("Authorization", `Bearer ${adminToken}`);
+      expect(res.status).toBe(502);
+      expect(typeof res.body.error).toBe("string");
+    } finally {
+      if (savedKey !== undefined) process.env.GEMINI_API_KEY = savedKey;
+    }
   });
 
   it("writes a custom answer for an unmatched item", async () => {
