@@ -1,5 +1,10 @@
 import "dotenv/config";
 import express from "express";
+// Express 4 doesn't forward rejected promises from async route handlers to
+// the error middleware below — an unexpected error in any endpoint would
+// otherwise crash the whole process instead of returning a 500. Must be
+// imported before any router registers its routes.
+import "express-async-errors";
 import cors from "cors";
 import { authRouter } from "./routes/auth.js";
 import { documentsRouter } from "./routes/documents.js";

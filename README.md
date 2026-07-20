@@ -37,11 +37,11 @@ your files for you."
 - **AI draft from evidence** — for a question with no passport match, "Draft
   from evidence (AI)" reads the document vault (native PDF understanding for
   PDFs, plain text for text files) and drafts a grounded answer via the
-  Claude API, citing which document(s) it used, or explicitly declining if
-  nothing in the vault supports the question rather than guessing. Always a
-  **draft** — it's never auto-submitted; a human reviews and explicitly
-  accepts it (same confirm step as everything else) before it counts as an
-  answer or reaches an export.
+  Gemini API (free tier), citing which document(s) it used, or explicitly
+  declining if nothing in the vault supports the question rather than
+  guessing. Always a **draft** — it's never auto-submitted; a human reviews
+  and explicitly accepts it (same confirm step as everything else) before it
+  counts as an answer or reaches an export.
 - **Document vault** — upload certs/policies/insurance/evidence, tagged
   by category, used as the evidence layer behind passport answers.
 - **Certification tracking** — named certs with valid-until dates and a
@@ -62,9 +62,10 @@ your files for you."
   migrations in `server/migrations/`, no ORM)
 - Matching: deterministic Jaccard word-overlap scoring, not an LLM call —
   transparent and free to run
-- AI drafting: `@anthropic-ai/sdk`, model `claude-opus-4-8`, structured
-  output via a Zod schema (`server/src/services/evidenceDraft.ts`) — a
-  single call per draft request, not an agent loop
+- AI drafting: `@google/genai` (Gemini Developer API, free tier), model
+  `gemini-2.5-flash`, structured JSON output
+  (`server/src/services/evidenceDraft.ts`) — a single call per draft
+  request, not an agent loop
 - Export: `pdfkit` for the response PDF, `archiver` for the ZIP
 - Auth: JWT + bcrypt. **Not production-grade** — fine for a demo, would
   need SSO/MFA for real MOD-supplier use.
@@ -76,7 +77,7 @@ Requires Node 18+ and PostgreSQL.
 ```bash
 createdb mod_compliance
 npm install
-cp server/.env.example server/.env   # edit DATABASE_URL/JWT_SECRET/ANTHROPIC_API_KEY
+cp server/.env.example server/.env   # edit DATABASE_URL/JWT_SECRET/GEMINI_API_KEY
 npm run migrate
 npm run seed    # fictional demo company + starter passport + a demo request
 npm run dev      # server on :3001, client on :5173 (proxies /api)
@@ -104,13 +105,13 @@ createdb mod_compliance_test
 npm test
 ```
 
-**AI drafting needs `ANTHROPIC_API_KEY` set** in `server/.env` to actually call
-the model — without it, "Draft from evidence" returns a clear error instead
-of crashing (covered by a test). This was built and tested against a mocked
-client plus the real no-key failure path; it has **not** been exercised
-against a live model response in this environment, since no API key was
-available while building it — worth a real end-to-end check before relying
-on it.
+**AI drafting needs `GEMINI_API_KEY` set** in `server/.env` to actually call
+the model — get one free, no payment method required, at
+https://aistudio.google.com/apikey. Without a key, "Draft from evidence"
+returns a clear error instead of crashing (covered by a test — Express 4
+doesn't forward async route errors to its error handler by default, so this
+app uses `express-async-errors` to make sure a failure in any endpoint
+returns a clean response instead of taking the whole server down).
 
 ## What's deliberately not built
 

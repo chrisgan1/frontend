@@ -1,7 +1,6 @@
 import fs from "node:fs";
-import Anthropic from "@anthropic-ai/sdk";
-import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
-import { z } from "zod/v4";
+import { GoogleGenAI, ApiError } from "@google/genai";
+import { z } from "zod";
 
 // Tier 2 of the "compliance passport" AI feature: draft an answer to an
 // incoming question directly from the document vault, for questions with no
@@ -9,6 +8,11 @@ import { z } from "zod/v4";
 // responsible for requiring human confirmation before it becomes a real
 // answer (see requests.ts: stored as ai_draft_answer, only promoted to
 // custom_answer once a human explicitly accepts it).
+//
+// Uses Gemini's free tier (Gemini Developer API via GEMINI_API_KEY) rather
+// than a paid API — this is a single grounded-QA call, well within what a
+// free-tier flash model handles, so there's no reason to spend on a
+// frontier-tier model for it.
 
 const draftSchema = z.object({
   foundEvidence: z.boolean(),
@@ -16,11 +20,27 @@ const draftSchema = z.object({
   usedDocumentTitles: z.array(z.string()),
 });
 
+// Matches draftSchema above. Gemini's responseJsonSchema accepts a real JSON
+// Schema (a documented subset), unlike responseSchema's OpenAPI-subset format.
+const RESPONSE_JSON_SCHEMA = {
+  type: "object",
+  properties: {
+    foundEvidence: { type: "boolean" },
+    answer: { type: "string" },
+    usedDocumentTitles: { type: "array", items: { type: "string" } },
+  },
+  required: ["foundEvidence", "answer", "usedDocumentTitles"],
+};
+
 const SYSTEM_PROMPT = `You are drafting a formal compliance response for a UK defence supplier. The draft you produce will be reviewed and edited by a human before it is sent to anyone — you are not sending this yourself.
 
 Only state facts that are directly and clearly supported by the evidence documents provided in this message. Do not infer, extrapolate, or guess at details the documents don't contain. If the documents do not address the question, set foundEvidence to false, leave answer as an empty string, and do not invent a plausible-sounding answer.
 
-When you do have supporting evidence: keep the answer concise (2-4 sentences), factual, and professional. In usedDocumentTitles, list the exact titles (copied verbatim from what was given to you) of only the documents you actually drew on — omit any you didn't use.`;
+When you do have supporting evidence: keep the answer concise (2-4 sentences), factual, and professional. In usedDocumentTitles, list the exact titles (copied verbatim from what was given to you) of only the documents you actually drew on — omit any you didn't use.
+
+Respond with JSON matching the provided schema only — no other text.`;
+
+const MODEL = "gemini-2.5-flash";
 
 export interface EvidenceDoc {
   id: string;
@@ -41,15 +61,15 @@ export async function draftAnswerFromEvidence(
   question: string,
   docs: EvidenceDoc[],
 ): Promise<DraftResult> {
-  if (!process.env.ANTHROPIC_API_KEY) {
+  if (!process.env.GEMINI_API_KEY) {
     throw new DraftUnavailableError(
-      "AI drafting is not configured on this server (ANTHROPIC_API_KEY is not set).",
+      "AI drafting is not configured on this server (GEMINI_API_KEY is not set).",
     );
   }
 
-  const client = new Anthropic();
+  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
   const titleToId = new Map<string, string>();
-  const content: Anthropic.MessageParam["content"] = [];
+  const contents: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }> = [];
 
   for (const doc of docs) {
     if (!fs.existsSync(doc.filePath)) continue;
@@ -57,44 +77,54 @@ export async function draftAnswerFromEvidence(
 
     if (doc.mimeType === "application/pdf") {
       const data = fs.readFileSync(doc.filePath).toString("base64");
-      content.push({
-        type: "document",
-        title: doc.title,
-        source: { type: "base64", media_type: "application/pdf", data },
-      });
+      contents.push({ inlineData: { mimeType: "application/pdf", data } });
+      contents.push({ text: `(The document above is titled "${doc.title}".)` });
     } else if (doc.mimeType.startsWith("text/")) {
       const text = fs.readFileSync(doc.filePath, "utf-8");
-      content.push({ type: "text", text: `Document "${doc.title}":\n${text}` });
+      contents.push({ text: `Document "${doc.title}":\n${text}` });
     }
     // Other mime types (images, docx, etc.) aren't extracted for this pass —
     // they simply aren't offered as evidence to the model.
   }
 
-  content.push({ type: "text", text: `Question: ${question}` });
+  contents.push({ text: `Question: ${question}` });
 
   let response;
   try {
-    response = await client.messages.parse({
-      model: "claude-opus-4-8",
-      max_tokens: 4096,
-      thinking: { type: "adaptive" },
-      system: SYSTEM_PROMPT,
-      messages: [{ role: "user", content }],
-      output_config: { format: zodOutputFormat(draftSchema) },
+    response = await ai.models.generateContent({
+      model: MODEL,
+      contents,
+      config: {
+        systemInstruction: SYSTEM_PROMPT,
+        responseMimeType: "application/json",
+        responseJsonSchema: RESPONSE_JSON_SCHEMA,
+      },
     });
   } catch (err) {
-    if (err instanceof Anthropic.AuthenticationError) {
-      throw new DraftUnavailableError("AI drafting is not available: invalid API credentials.");
+    // Any Gemini-side failure (bad key, rate limit, quota, service outage)
+    // should degrade to a clear error, not crash the request — the caller's
+    // job is only "here's a draft or here's why not."
+    if (err instanceof ApiError) {
+      const reason =
+        err.status === 401 || err.status === 403 || err.status === 400
+          ? "invalid or missing API credentials"
+          : err.status === 429
+            ? "rate limit or quota exceeded"
+            : `provider error (status ${err.status})`;
+      throw new DraftUnavailableError(`AI drafting is not available right now: ${reason}.`);
     }
     throw err;
   }
 
-  if (response.stop_reason === "refusal") {
-    throw new DraftUnavailableError("The drafting request was declined.");
+  const raw = response.text;
+  if (!raw) {
+    throw new DraftUnavailableError("Could not generate a draft from the available evidence.");
   }
 
-  const parsed = response.parsed_output;
-  if (!parsed) {
+  let parsed;
+  try {
+    parsed = draftSchema.parse(JSON.parse(raw));
+  } catch {
     throw new DraftUnavailableError("Could not generate a draft from the available evidence.");
   }
 

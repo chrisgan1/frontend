@@ -1,42 +1,48 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 
-const mockParse = vi.fn();
+const mockGenerateContent = vi.fn();
 
-vi.mock("@anthropic-ai/sdk", () => {
-  class MockAnthropic {
-    messages = { parse: mockParse };
+vi.mock("@google/genai", () => {
+  class MockGoogleGenAI {
+    models = { generateContent: mockGenerateContent };
   }
-  class AuthenticationError extends Error {}
-  return { default: Object.assign(MockAnthropic, { AuthenticationError }) };
+  class ApiError extends Error {
+    status: number;
+    constructor(options: { message: string; status: number }) {
+      super(options.message);
+      this.status = options.status;
+    }
+  }
+  return { GoogleGenAI: MockGoogleGenAI, ApiError };
 });
 
+import { ApiError } from "@google/genai";
 import { draftAnswerFromEvidence, DraftUnavailableError } from "../services/evidenceDraft.js";
 
-const originalKey = process.env.ANTHROPIC_API_KEY;
+const originalKey = process.env.GEMINI_API_KEY;
 
 describe("draftAnswerFromEvidence", () => {
   afterEach(() => {
-    process.env.ANTHROPIC_API_KEY = originalKey;
-    mockParse.mockReset();
+    process.env.GEMINI_API_KEY = originalKey;
+    mockGenerateContent.mockReset();
   });
 
   it("throws DraftUnavailableError when no API key is configured", async () => {
-    delete process.env.ANTHROPIC_API_KEY;
+    delete process.env.GEMINI_API_KEY;
     await expect(draftAnswerFromEvidence("Do you hold ISO 27001?", [])).rejects.toThrow(
       DraftUnavailableError,
     );
-    expect(mockParse).not.toHaveBeenCalled();
+    expect(mockGenerateContent).not.toHaveBeenCalled();
   });
 
   it("maps cited document titles back to their IDs and drops unrecognized titles", async () => {
-    process.env.ANTHROPIC_API_KEY = "test-key";
-    mockParse.mockResolvedValue({
-      stop_reason: "end_turn",
-      parsed_output: {
+    process.env.GEMINI_API_KEY = "test-key";
+    mockGenerateContent.mockResolvedValue({
+      text: JSON.stringify({
         foundEvidence: true,
         answer: "Yes, we hold Cyber Essentials Plus.",
         usedDocumentTitles: ["Cyber Essentials Plus Certificate", "Some Hallucinated Title"],
-      },
+      }),
     });
 
     const result = await draftAnswerFromEvidence("Do you hold Cyber Essentials Plus?", [
@@ -53,14 +59,37 @@ describe("draftAnswerFromEvidence", () => {
   });
 
   it("reports no evidence found without fabricating an answer", async () => {
-    process.env.ANTHROPIC_API_KEY = "test-key";
-    mockParse.mockResolvedValue({
-      stop_reason: "end_turn",
-      parsed_output: { foundEvidence: false, answer: "", usedDocumentTitles: [] },
+    process.env.GEMINI_API_KEY = "test-key";
+    mockGenerateContent.mockResolvedValue({
+      text: JSON.stringify({ foundEvidence: false, answer: "", usedDocumentTitles: [] }),
     });
 
     const result = await draftAnswerFromEvidence("What is your favourite colour?", []);
     expect(result.foundEvidence).toBe(false);
     expect(result.usedDocumentIds).toEqual([]);
+  });
+
+  it("fails clearly (not a crash) when the model returns unparseable output", async () => {
+    process.env.GEMINI_API_KEY = "test-key";
+    mockGenerateContent.mockResolvedValue({ text: "not valid json" });
+
+    await expect(draftAnswerFromEvidence("Do you hold ISO 27001?", [])).rejects.toThrow(
+      DraftUnavailableError,
+    );
+  });
+
+  // Regression: a real invalid key came back from Gemini as status 400
+  // (INVALID_ARGUMENT / API_KEY_INVALID), not 401/403 — an earlier version
+  // of this code only special-cased 401/403 and let everything else
+  // (including this) propagate as a raw, uncaught ApiError.
+  it("converts any ApiError status — not just 401/403 — into a DraftUnavailableError", async () => {
+    process.env.GEMINI_API_KEY = "test-key";
+    mockGenerateContent.mockRejectedValue(
+      new (ApiError as any)({ message: "API key not valid.", status: 400 }),
+    );
+
+    await expect(draftAnswerFromEvidence("Do you hold ISO 27001?", [])).rejects.toThrow(
+      DraftUnavailableError,
+    );
   });
 });

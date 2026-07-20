@@ -234,7 +234,7 @@ describe("requests: matching an incoming questionnaire to the passport", () => {
   });
 
   it("fails clearly (not a crash) when no AI provider is configured", async () => {
-    // This test environment has no ANTHROPIC_API_KEY set, which is the real
+    // This test environment has no GEMINI_API_KEY set, which is the real
     // out-of-the-box state for anyone who hasn't configured the feature —
     // it should degrade to a clear error, not a 500 or an unhandled crash.
     const detail = await request(app)
