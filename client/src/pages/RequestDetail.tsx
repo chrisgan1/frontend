@@ -16,7 +16,7 @@ interface RequestInfo {
 interface Item {
   id: string;
   question_text: string;
-  status: "unmatched" | "suggested" | "confirmed";
+  status: "unmatched" | "suggested" | "ai_drafted" | "confirmed";
   suggested_qa_entry_id: string | null;
   suggested_score: number | null;
   suggested_question: string | null;
@@ -24,6 +24,8 @@ interface Item {
   matched_question: string | null;
   matched_answer: string | null;
   custom_answer: string | null;
+  ai_draft_answer: string | null;
+  ai_draft_source_titles: string[] | null;
 }
 
 export default function RequestDetail() {
@@ -39,6 +41,7 @@ export default function RequestDetail() {
   const [exporting, setExporting] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [customText, setCustomText] = useState("");
+  const [draftingId, setDraftingId] = useState<string | null>(null);
 
   function load() {
     api.get(`/requests/${id}`).then((res) => {
@@ -75,6 +78,28 @@ export default function RequestDetail() {
     await api.patch(`/requests/${id}/items/${itemId}`, { customAnswer: customText });
     setEditingId(null);
     setCustomText("");
+    load();
+  }
+
+  async function draftFromEvidence(itemId: string) {
+    setDraftingId(itemId);
+    setError(null);
+    try {
+      const res = await api.post(`/requests/${id}/items/${itemId}/draft`);
+      if (!res.foundEvidence) {
+        setError("No supporting evidence found in the document vault for this question.");
+      }
+      load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not generate a draft");
+    } finally {
+      setDraftingId(null);
+    }
+  }
+
+  async function acceptDraft(item: Item) {
+    if (!item.ai_draft_answer) return;
+    await api.patch(`/requests/${id}/items/${item.id}`, { customAnswer: item.ai_draft_answer });
     load();
   }
 
@@ -136,21 +161,33 @@ export default function RequestDetail() {
                 <span className={`ml-3 shrink-0 rounded px-2 py-0.5 text-xs ${
                   item.status === "confirmed" ? "bg-green-100 text-green-800"
                   : item.status === "suggested" ? "bg-amber-100 text-amber-800"
+                  : item.status === "ai_drafted" ? "bg-purple-100 text-purple-800"
                   : "bg-slate-100 text-slate-600"
                 }`}>
-                  {item.status === "confirmed" ? "✓ Confirmed" : item.status === "suggested" ? "Suggested match" : "No match"}
+                  {item.status === "confirmed" ? "✓ Confirmed"
+                    : item.status === "suggested" ? "Suggested match"
+                    : item.status === "ai_drafted" ? "AI draft — needs review"
+                    : "No match"}
                 </span>
               </div>
 
               {resolvedAnswer ? (
                 <p className="text-sm text-slate-600">{resolvedAnswer}</p>
+              ) : item.ai_draft_answer ? (
+                <div className="rounded bg-purple-50 p-2 text-sm">
+                  <p className="text-slate-500">
+                    AI draft from evidence{item.ai_draft_source_titles?.length
+                      ? ` (${item.ai_draft_source_titles.join(", ")})` : ""} — review before accepting:
+                  </p>
+                  <p className="mt-1 text-slate-700">{item.ai_draft_answer}</p>
+                </div>
               ) : item.suggested_answer ? (
                 <div className="rounded bg-amber-50 p-2 text-sm">
                   <p className="text-slate-500">Suggested from passport (match {(Number(item.suggested_score) * 100).toFixed(0)}%): "{item.suggested_question}"</p>
                   <p className="mt-1 text-slate-700">{item.suggested_answer}</p>
                 </div>
               ) : (
-                <p className="text-sm text-slate-400">No passport match found — add an answer manually.</p>
+                <p className="text-sm text-slate-400">No passport match found — draft from evidence or add an answer manually.</p>
               )}
 
               {canWrite && item.status !== "confirmed" && (
@@ -159,6 +196,17 @@ export default function RequestDetail() {
                     <button onClick={() => acceptSuggestion(item)}
                       className="rounded bg-navy px-3 py-1 text-xs text-white hover:bg-slate-800">
                       Accept suggestion
+                    </button>
+                  )}
+                  {item.ai_draft_answer ? (
+                    <button onClick={() => acceptDraft(item)}
+                      className="rounded bg-navy px-3 py-1 text-xs text-white hover:bg-slate-800">
+                      Accept AI draft
+                    </button>
+                  ) : (
+                    <button onClick={() => draftFromEvidence(item.id)} disabled={draftingId === item.id}
+                      className="rounded border border-slate-300 px-3 py-1 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50">
+                      {draftingId === item.id ? "Drafting…" : "Draft from evidence (AI)"}
                     </button>
                   )}
                   {editingId === item.id ? (

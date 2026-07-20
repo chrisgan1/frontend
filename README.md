@@ -34,6 +34,14 @@ your files for you."
 - **Export** — a per-request ZIP: a formatted Q&A response PDF (dated,
   scoped to that requester) plus the actual evidence files cited by the
   confirmed answers.
+- **AI draft from evidence** — for a question with no passport match, "Draft
+  from evidence (AI)" reads the document vault (native PDF understanding for
+  PDFs, plain text for text files) and drafts a grounded answer via the
+  Claude API, citing which document(s) it used, or explicitly declining if
+  nothing in the vault supports the question rather than guessing. Always a
+  **draft** — it's never auto-submitted; a human reviews and explicitly
+  accepts it (same confirm step as everything else) before it counts as an
+  answer or reaches an export.
 - **Document vault** — upload certs/policies/insurance/evidence, tagged
   by category, used as the evidence layer behind passport answers.
 - **Certification tracking** — named certs with valid-until dates and a
@@ -54,6 +62,9 @@ your files for you."
   migrations in `server/migrations/`, no ORM)
 - Matching: deterministic Jaccard word-overlap scoring, not an LLM call —
   transparent and free to run
+- AI drafting: `@anthropic-ai/sdk`, model `claude-opus-4-8`, structured
+  output via a Zod schema (`server/src/services/evidenceDraft.ts`) — a
+  single call per draft request, not an agent loop
 - Export: `pdfkit` for the response PDF, `archiver` for the ZIP
 - Auth: JWT + bcrypt. **Not production-grade** — fine for a demo, would
   need SSO/MFA for real MOD-supplier use.
@@ -65,7 +76,7 @@ Requires Node 18+ and PostgreSQL.
 ```bash
 createdb mod_compliance
 npm install
-cp server/.env.example server/.env   # edit DATABASE_URL/JWT_SECRET
+cp server/.env.example server/.env   # edit DATABASE_URL/JWT_SECRET/ANTHROPIC_API_KEY
 npm run migrate
 npm run seed    # fictional demo company + starter passport + a demo request
 npm run dev      # server on :3001, client on :5173 (proxies /api)
@@ -92,6 +103,14 @@ database and re-applies migrations against it):
 createdb mod_compliance_test
 npm test
 ```
+
+**AI drafting needs `ANTHROPIC_API_KEY` set** in `server/.env` to actually call
+the model — without it, "Draft from evidence" returns a clear error instead
+of crashing (covered by a test). This was built and tested against a mocked
+client plus the real no-key failure path; it has **not** been exercised
+against a live model response in this environment, since no API key was
+available while building it — worth a real end-to-end check before relying
+on it.
 
 ## What's deliberately not built
 

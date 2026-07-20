@@ -221,6 +221,34 @@ describe("requests: matching an incoming questionnaire to the passport", () => {
     expect(confirm.body.item.status).toBe("confirmed");
   });
 
+  it("blocks an auditor from requesting an AI draft", async () => {
+    const detail = await request(app)
+      .get(`/api/requests/${requestId}`)
+      .set("Authorization", `Bearer ${adminToken}`);
+    const item = detail.body.items.find((i: any) => i.status === "unmatched");
+
+    const res = await request(app)
+      .post(`/api/requests/${requestId}/items/${item.id}/draft`)
+      .set("Authorization", `Bearer ${auditorToken}`);
+    expect(res.status).toBe(403);
+  });
+
+  it("fails clearly (not a crash) when no AI provider is configured", async () => {
+    // This test environment has no ANTHROPIC_API_KEY set, which is the real
+    // out-of-the-box state for anyone who hasn't configured the feature —
+    // it should degrade to a clear error, not a 500 or an unhandled crash.
+    const detail = await request(app)
+      .get(`/api/requests/${requestId}`)
+      .set("Authorization", `Bearer ${adminToken}`);
+    const item = detail.body.items.find((i: any) => i.status === "unmatched");
+
+    const res = await request(app)
+      .post(`/api/requests/${requestId}/items/${item.id}/draft`)
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(res.status).toBe(502);
+    expect(typeof res.body.error).toBe("string");
+  });
+
   it("writes a custom answer for an unmatched item", async () => {
     const detail = await request(app)
       .get(`/api/requests/${requestId}`)

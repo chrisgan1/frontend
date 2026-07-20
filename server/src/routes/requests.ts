@@ -7,6 +7,7 @@ import { pool } from "../db/pool.js";
 import { requireAuth, requireRole, WRITE_ROLES } from "../middleware/auth.js";
 import { recordAudit } from "../utils/audit.js";
 import { bestMatch } from "../utils/match.js";
+import { draftAnswerFromEvidence, DraftUnavailableError } from "../services/evidenceDraft.js";
 
 export const requestsRouter = Router();
 
@@ -43,7 +44,9 @@ async function loadRequestItems(requestId: string) {
   const { rows } = await pool.query(
     `SELECT ri.*,
             sq.question AS suggested_question, sq.answer AS suggested_answer,
-            mq.question AS matched_question, mq.answer AS matched_answer
+            mq.question AS matched_question, mq.answer AS matched_answer,
+            (SELECT array_agg(title) FROM documents WHERE id = ANY(ri.ai_draft_source_document_ids))
+              AS ai_draft_source_titles
      FROM request_items ri
      LEFT JOIN qa_entries sq ON sq.id = ri.suggested_qa_entry_id
      LEFT JOIN qa_entries mq ON mq.id = ri.matched_qa_entry_id
@@ -118,6 +121,52 @@ requestsRouter.patch(
   },
 );
 
+requestsRouter.post(
+  "/requests/:id/items/:itemId/draft",
+  requireAuth,
+  requireRole(...WRITE_ROLES),
+  async (req, res) => {
+    const item = (
+      await pool.query("SELECT * FROM request_items WHERE id = $1 AND request_id = $2", [
+        req.params.itemId,
+        req.params.id,
+      ])
+    ).rows[0];
+    if (!item) return res.status(404).json({ error: "Request item not found" });
+    if (item.status === "confirmed") {
+      return res.status(400).json({ error: "This item is already confirmed" });
+    }
+
+    const docs = (
+      await pool.query(
+        "SELECT id, title, mime_type AS \"mimeType\", file_path AS \"filePath\" FROM documents ORDER BY created_at DESC LIMIT 30",
+      )
+    ).rows;
+
+    try {
+      const draft = await draftAnswerFromEvidence(item.question_text, docs);
+
+      const { rows } = await pool.query(
+        `UPDATE request_items
+         SET ai_draft_answer = $1, ai_draft_source_document_ids = $2,
+             status = CASE WHEN $3 THEN 'ai_drafted' ELSE status END
+         WHERE id = $4 RETURNING *`,
+        [draft.foundEvidence ? draft.answer : null, draft.usedDocumentIds, draft.foundEvidence, item.id],
+      );
+      await recordAudit("request_item", item.id, "ai_draft_generated", req.user!.id, {
+        foundEvidence: draft.foundEvidence,
+        sourceCount: draft.usedDocumentIds.length,
+      });
+      res.json({ item: rows[0], foundEvidence: draft.foundEvidence });
+    } catch (err) {
+      if (err instanceof DraftUnavailableError) {
+        return res.status(502).json({ error: err.message });
+      }
+      throw err;
+    }
+  },
+);
+
 requestsRouter.post("/requests/:id/export", requireAuth, async (req, res) => {
   const request = await pool.query("SELECT * FROM requests WHERE id = $1", [req.params.id]);
   if (!request.rows[0]) return res.status(404).json({ error: "Request not found" });
@@ -127,12 +176,14 @@ requestsRouter.post("/requests/:id/export", requireAuth, async (req, res) => {
   const evidenceIds = new Set<string>();
   for (const item of items) {
     const qaId = item.matched_qa_entry_id ?? item.suggested_qa_entry_id;
-    if (!qaId) continue;
-    const evidence = await pool.query(
-      "SELECT document_id FROM qa_entry_evidence WHERE qa_entry_id = $1",
-      [qaId],
-    );
-    evidence.rows.forEach((r) => evidenceIds.add(r.document_id));
+    if (qaId) {
+      const evidence = await pool.query(
+        "SELECT document_id FROM qa_entry_evidence WHERE qa_entry_id = $1",
+        [qaId],
+      );
+      evidence.rows.forEach((r) => evidenceIds.add(r.document_id));
+    }
+    (item.ai_draft_source_document_ids ?? []).forEach((id: string) => evidenceIds.add(id));
   }
   const docs = evidenceIds.size
     ? (await pool.query("SELECT * FROM documents WHERE id = ANY($1::uuid[])", [[...evidenceIds]])).rows
