@@ -3,5 +3,6 @@ dist/
 build/
 .env
 *.log
+*.tsbuildinfo
 server/uploads/*
 !server/uploads/.gitkeep

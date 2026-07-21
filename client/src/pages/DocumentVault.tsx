@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { api, downloadFile } from "../api/client.js";
 import { useAuth } from "../context/AuthContext.js";
 
-const TAGS = ["Security", "Quality", "Insurance", "People", "Export Control"] as const;
-const WRITE_ROLES = new Set(["admin", "compliance_manager", "contributor"]);
+const TAGS = ["Corporate", "Insurance", "Quality", "Cyber", "Personnel"] as const;
+const WRITE_ROLES = new Set(["owner", "editor"]);
 
 interface Document {
   id: string;
@@ -27,6 +27,7 @@ export default function DocumentVault() {
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [lastExtraction, setLastExtraction] = useState<{ title: string; factsUpdated: number; conflicts: number } | null>(null);
 
   const canWrite = !!user && WRITE_ROLES.has(user.role);
 
@@ -52,7 +53,12 @@ export default function DocumentVault() {
       form.append("file", file);
       if (expiresAt) form.append("expiresAt", expiresAt);
       selectedTags.forEach((t) => form.append("tags", t));
-      await api.postForm("/documents", form);
+      const res = await api.postForm("/documents", form);
+      setLastExtraction({
+        title: res.document.title,
+        factsUpdated: res.extraction?.factsUpdated ?? 0,
+        conflicts: res.extraction?.conflicts ?? 0,
+      });
       setTitle("");
       setExpiresAt("");
       setSelectedTags([]);
@@ -79,6 +85,15 @@ export default function DocumentVault() {
       </div>
 
       {error && <p className="mb-4 rounded bg-red-50 p-2 text-sm text-red-700">{error}</p>}
+
+      {lastExtraction && (
+        <p className="mb-4 rounded bg-purple-50 p-2 text-sm text-purple-800">
+          "{lastExtraction.title}" uploaded — {lastExtraction.factsUpdated} fact
+          {lastExtraction.factsUpdated === 1 ? "" : "s"} extracted
+          {lastExtraction.conflicts > 0 ? `, ${lastExtraction.conflicts} conflicting with an already-verified fact` : ""}.{" "}
+          <a href="/facts" className="underline">Review in the Fact Base</a>.
+        </p>
+      )}
 
       {showForm && (
         <form onSubmit={handleUpload} className="mb-6 rounded-lg border border-slate-200 p-4">

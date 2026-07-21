@@ -32,6 +32,12 @@ export function requireRole(...roles: Role[]) {
   };
 }
 
-export const WRITE_ROLES: Role[] = ["admin", "compliance_manager", "contributor"];
-export const APPROVE_ROLES: Role[] = ["admin", "compliance_manager"];
-export const ADMIN_ROLES: Role[] = ["admin"];
+// Facts, documents, questionnaires: full read/write.
+export const WRITE_ROLES: Role[] = ["owner", "editor"];
+// Answering assigned questions. Contributors don't get vault/fact-base
+// write access (per the spec's role table), only answers.
+export const ANSWER_ROLES: Role[] = ["owner", "editor", "contributor"];
+// Attest and submit — the spec calls this the approver's sole distinguishing
+// power; owner can do everything, so it retains this too.
+export const APPROVER_ROLES: Role[] = ["owner", "approver"];
+export const ADMIN_ROLES: Role[] = ["owner"];

@@ -5,14 +5,21 @@ export interface User {
   id: string;
   email: string;
   name: string;
-  role: "admin" | "compliance_manager" | "contributor" | "auditor";
+  role: "owner" | "editor" | "contributor" | "approver" | "read_only";
+  organisationId: string;
 }
 
 interface AuthContextValue {
   user: User | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string, name: string, role: string) => Promise<void>;
+  register: (
+    email: string,
+    password: string,
+    name: string,
+    role: string,
+    organisationName?: string,
+  ) => Promise<void>;
   logout: () => void;
 }
 
@@ -40,8 +47,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(res.user);
   }
 
-  async function register(email: string, password: string, name: string, role: string) {
-    const res = await api.post("/auth/register", { email, password, name, role });
+  async function register(
+    email: string,
+    password: string,
+    name: string,
+    role: string,
+    organisationName?: string,
+  ) {
+    const res = await api.post("/auth/register", { email, password, name, role, organisationName });
     setToken(res.token);
     setUser(res.user);
   }

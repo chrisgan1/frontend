@@ -3,36 +3,17 @@ import { Link } from "react-router-dom";
 import { api } from "../api/client.js";
 
 interface DashboardData {
-  certifications: {
-    id: string;
-    name: string;
-    valid_until: string;
-    status: "valid" | "expiring_soon" | "expired";
-    days_until_expiry: number;
-  }[];
-  headcounts: {
-    total_employees: number;
-    bpss_cleared: number;
-    sc_cleared: number;
-    dv_cleared: number;
+  factBase: {
+    verifiedCount: number;
+    totalCanonical: number;
+    completeness: number;
+    conflicts: number;
   };
-  passportEntryCount: number;
-  openRequests: number;
-  submittedRequests: number;
+  expiringSoon: { key: string; label: string; expiry: string }[];
   documentsCount: number;
+  questionnaires: { ready: number; exported: number; attested: number; total: number };
+  latestQuestionnaire: { id: string; filename: string; status: string; readiness: number } | null;
 }
-
-const STATUS_STYLE: Record<string, string> = {
-  valid: "border-slate-200 bg-white",
-  expiring_soon: "border-amber-300 bg-amber-50",
-  expired: "border-red-300 bg-red-50",
-};
-
-const STATUS_LABEL: Record<string, string> = {
-  valid: "✓ Valid until",
-  expiring_soon: "⚠ Expires",
-  expired: "✗ Expired",
-};
 
 export default function Dashboard() {
   const [data, setData] = useState<DashboardData | null>(null);
@@ -47,43 +28,54 @@ export default function Dashboard() {
 
   return (
     <div className="mx-auto max-w-5xl p-6">
-      <h1 className="mb-6 text-2xl font-semibold text-navy">Compliance Dashboard</h1>
+      <h1 className="mb-6 text-2xl font-semibold text-navy">Dashboard</h1>
 
-      <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-slate-500">Certifications</h2>
-      <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-3">
-        {data.certifications.map((c) => (
-          <div key={c.id} className={`rounded-lg border p-4 ${STATUS_STYLE[c.status]}`}>
-            <p className="text-sm font-medium text-slate-800">{c.name}</p>
-            <p className="text-sm text-slate-600">
-              {STATUS_LABEL[c.status]} {new Date(c.valid_until).toLocaleDateString("en-GB", { month: "long", year: "numeric" })}
-            </p>
-            {c.status === "expiring_soon" && (
-              <p className="text-xs text-amber-700">{c.days_until_expiry} days remaining</p>
-            )}
-          </div>
-        ))}
-        {data.certifications.length === 0 && (
-          <p className="col-span-full text-sm text-slate-400">
-            No certifications tracked yet — add one on the{" "}
-            <Link to="/certifications" className="text-navy underline">Certifications</Link> page.
-          </p>
-        )}
-      </div>
-
-      <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-slate-500">Personnel</h2>
+      <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-slate-500">Fact Base</h2>
       <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-4">
-        <Stat label="BPSS Staff" value={String(data.headcounts.bpss_cleared)} sub={`of ${data.headcounts.total_employees}`} />
-        <Stat label="SC Cleared" value={String(data.headcounts.sc_cleared)} />
-        <Stat label="DV Cleared" value={String(data.headcounts.dv_cleared)} />
+        <Stat label="Verified" value={`${Math.round(data.factBase.completeness * 100)}%`}
+          sub={`${data.factBase.verifiedCount} of ${data.factBase.totalCanonical} facts`} />
+        <div className={`rounded-lg border p-4 ${data.factBase.conflicts > 0 ? "border-red-300 bg-red-50" : "border-slate-200 bg-white"}`}>
+          <p className="text-xs uppercase tracking-wide text-slate-500">Conflicts</p>
+          <p className="text-2xl font-semibold text-navy">{data.factBase.conflicts}</p>
+          {data.factBase.conflicts > 0 && (
+            <Link to="/facts" className="text-xs text-red-700 underline">Resolve in Fact Base</Link>
+          )}
+        </div>
         <Stat label="Documents in vault" value={String(data.documentsCount)} />
+        <Stat label="Questionnaires" value={String(data.questionnaires.total)}
+          sub={`${data.questionnaires.attested} attested`} />
       </div>
 
-      <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-slate-500">Passport & requests</h2>
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
-        <Stat label="Passport Answers" value={String(data.passportEntryCount)} />
-        <Stat label="Open Requests" value={String(data.openRequests)} />
-        <Stat label="Requests Submitted" value={String(data.submittedRequests)} />
-      </div>
+      {data.expiringSoon.length > 0 && (
+        <>
+          <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-slate-500">Expiring soon</h2>
+          <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-3">
+            {data.expiringSoon.map((f) => (
+              <div key={f.key} className="rounded-lg border border-amber-300 bg-amber-50 p-4">
+                <p className="text-sm font-medium text-slate-800">{f.label}</p>
+                <p className="text-sm text-slate-600">
+                  ⚠ Expires {new Date(f.expiry).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}
+                </p>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-slate-500">Latest questionnaire</h2>
+      {data.latestQuestionnaire ? (
+        <Link to={`/questionnaires/${data.latestQuestionnaire.id}`}
+          className="block rounded-lg border border-slate-200 bg-white p-4 hover:bg-slate-50">
+          <p className="font-medium text-slate-800">{data.latestQuestionnaire.filename}</p>
+          <p className="text-sm text-slate-500">
+            {Math.round(data.latestQuestionnaire.readiness * 100)}% ready · {data.latestQuestionnaire.status}
+          </p>
+        </Link>
+      ) : (
+        <p className="text-sm text-slate-400">
+          No questionnaires yet — upload one on the <Link to="/questionnaires" className="text-navy underline">Questionnaires</Link> page.
+        </p>
+      )}
     </div>
   );
 }

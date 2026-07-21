@@ -6,6 +6,7 @@ import { z } from "zod";
 import { pool } from "../db/pool.js";
 import { requireAuth, requireRole, WRITE_ROLES } from "../middleware/auth.js";
 import { recordAudit } from "../utils/audit.js";
+import { extractFactsFromDocument } from "../services/factExtraction.js";
 
 export const documentsRouter = Router();
 
@@ -23,22 +24,21 @@ const upload = multer({
   limits: { fileSize: 25 * 1024 * 1024 },
 });
 
-export const DOCUMENT_TAGS = ["Security", "Quality", "Insurance", "People", "Export Control"] as const;
+export const DOCUMENT_TAGS = ["Corporate", "Insurance", "Quality", "Cyber", "Personnel"] as const;
 
 documentsRouter.get("/documents", requireAuth, async (req, res) => {
   const { tag } = req.query;
-  const conditions: string[] = [];
-  const params: unknown[] = [];
+  const conditions: string[] = ["d.organisation_id = $1"];
+  const params: unknown[] = [req.user!.organisationId];
   if (tag) {
     params.push(tag);
     conditions.push(`$${params.length} = ANY(d.tags)`);
   }
-  const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
 
   const { rows } = await pool.query(
     `SELECT d.*, u.name AS uploaded_by_name
      FROM documents d JOIN users u ON u.id = d.uploaded_by
-     ${where}
+     WHERE ${conditions.join(" AND ")}
      ORDER BY d.created_at DESC`,
     params,
   );
@@ -73,8 +73,8 @@ documentsRouter.post(
     const { title, description, expiresAt, tags } = parsed.data;
 
     const { rows } = await pool.query(
-      `INSERT INTO documents (title, description, file_path, file_name, mime_type, expires_at, tags, uploaded_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+      `INSERT INTO documents (title, description, file_path, file_name, mime_type, expires_at, tags, uploaded_by, organisation_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
       [
         title,
         description ?? null,
@@ -84,16 +84,34 @@ documentsRouter.post(
         expiresAt || null,
         tags,
         req.user!.id,
+        req.user!.organisationId,
       ],
     );
     const document = rows[0];
     await recordAudit("document", document.id, "uploaded", req.user!.id, { title, tags });
-    res.status(201).json({ document });
+
+    // Awaited in-request (same pattern as the AI draft endpoint) rather
+    // than fire-and-forget: keeps the "N facts extracted" count available
+    // immediately for the upload response, and keeps tests deterministic
+    // without polling for an async job to finish. A failed extraction
+    // (Gemini unavailable etc.) doesn't fail the upload — the document is
+    // already saved; it just leaves facts unextracted for this document.
+    let extractionResult: { factsUpdated: number; conflicts: number } = { factsUpdated: 0, conflicts: 0 };
+    try {
+      extractionResult = await extractFactsFromDocument(document);
+    } catch (err) {
+      console.error(`Fact extraction failed for document ${document.id}:`, err);
+    }
+
+    res.status(201).json({ document, extraction: extractionResult });
   },
 );
 
 documentsRouter.get("/documents/:id/download", requireAuth, async (req, res) => {
-  const { rows } = await pool.query("SELECT * FROM documents WHERE id = $1", [req.params.id]);
+  const { rows } = await pool.query(
+    "SELECT * FROM documents WHERE id = $1 AND organisation_id = $2",
+    [req.params.id, req.user!.organisationId],
+  );
   const document = rows[0];
   if (!document) return res.status(404).json({ error: "Document not found" });
   res.download(path.resolve(document.file_path), document.file_name);

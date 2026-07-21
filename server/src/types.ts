@@ -1,10 +1,11 @@
-export type Role = "admin" | "compliance_manager" | "contributor" | "auditor";
+export type Role = "owner" | "editor" | "contributor" | "approver" | "read_only";
 
 export interface AuthUser {
   id: string;
   email: string;
   name: string;
   role: Role;
+  organisationId: string;
 }
 
 declare global {

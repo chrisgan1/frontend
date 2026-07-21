@@ -4,11 +4,10 @@ import RequireAuth from "./components/RequireAuth.js";
 import Login from "./pages/Login.js";
 import Dashboard from "./pages/Dashboard.js";
 import DocumentVault from "./pages/DocumentVault.js";
-import Certifications from "./pages/Certifications.js";
-import ClearanceTracker from "./pages/ClearanceTracker.js";
-import Passport from "./pages/Passport.js";
-import Requests from "./pages/Requests.js";
-import RequestDetail from "./pages/RequestDetail.js";
+import FactBase from "./pages/FactBase.js";
+import Questionnaires from "./pages/Questionnaires.js";
+import QuestionnaireDetail from "./pages/QuestionnaireDetail.js";
+import GapRegister from "./pages/GapRegister.js";
 
 export default function App() {
   return (
@@ -17,12 +16,11 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/" element={<RequireAuth><Dashboard /></RequireAuth>} />
-        <Route path="/passport" element={<RequireAuth><Passport /></RequireAuth>} />
-        <Route path="/requests" element={<RequireAuth><Requests /></RequireAuth>} />
-        <Route path="/requests/:id" element={<RequireAuth><RequestDetail /></RequireAuth>} />
+        <Route path="/facts" element={<RequireAuth><FactBase /></RequireAuth>} />
         <Route path="/documents" element={<RequireAuth><DocumentVault /></RequireAuth>} />
-        <Route path="/certifications" element={<RequireAuth><Certifications /></RequireAuth>} />
-        <Route path="/clearance" element={<RequireAuth><ClearanceTracker /></RequireAuth>} />
+        <Route path="/questionnaires" element={<RequireAuth><Questionnaires /></RequireAuth>} />
+        <Route path="/questionnaires/:id" element={<RequireAuth><QuestionnaireDetail /></RequireAuth>} />
+        <Route path="/gaps" element={<RequireAuth><GapRegister /></RequireAuth>} />
       </Routes>
     </div>
   );

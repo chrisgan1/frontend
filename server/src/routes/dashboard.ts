@@ -1,44 +1,68 @@
 import { Router } from "express";
 import { pool } from "../db/pool.js";
 import { requireAuth } from "../middleware/auth.js";
+import { CANONICAL_FACTS } from "../services/canonicalFacts.js";
 
 export const dashboardRouter = Router();
 
 const EXPIRING_SOON_DAYS = 45;
 
-dashboardRouter.get("/dashboard", requireAuth, async (_req, res) => {
-  const [certifications, headcounts, passportCount, requestCounts, docCount] = await Promise.all([
-    pool.query(`SELECT id, name, valid_until FROM certifications ORDER BY valid_until ASC`),
-    pool.query(`
-      SELECT
-        count(*)::int AS total_employees,
-        count(*) FILTER (WHERE bpss_cleared)::int AS bpss_cleared,
-        count(*) FILTER (WHERE sc_status = 'granted' AND (sc_expiry IS NULL OR sc_expiry >= current_date))::int AS sc_cleared,
-        count(*) FILTER (WHERE dv_status = 'granted' AND (dv_expiry IS NULL OR dv_expiry >= current_date))::int AS dv_cleared
-      FROM employees
-    `),
-    pool.query(`SELECT count(*)::int AS n FROM qa_entries`),
-    pool.query(`
-      SELECT
-        count(*) FILTER (WHERE status = 'open')::int AS open,
-        count(*) FILTER (WHERE status = 'submitted')::int AS submitted
-      FROM requests
-    `),
-    pool.query(`SELECT count(*)::int AS n FROM documents`),
+dashboardRouter.get("/dashboard", requireAuth, async (req, res) => {
+  const orgId = req.user!.organisationId;
+
+  const [factCounts, expiringFacts, docCount, questionnaireCounts, latestQuestionnaire] = await Promise.all([
+    pool.query(
+      `SELECT
+         count(*) FILTER (WHERE status = 'verified')::int AS verified,
+         count(*) FILTER (WHERE conflict)::int AS conflicts,
+         count(*)::int AS total
+       FROM facts WHERE organisation_id = $1`,
+      [orgId],
+    ),
+    pool.query(
+      `SELECT key, label, expiry FROM facts
+       WHERE organisation_id = $1 AND expiry IS NOT NULL
+         AND expiry <= current_date + $2::int
+       ORDER BY expiry ASC`,
+      [orgId, EXPIRING_SOON_DAYS],
+    ),
+    pool.query(`SELECT count(*)::int AS n FROM documents WHERE organisation_id = $1`, [orgId]),
+    pool.query(
+      `SELECT
+         count(*) FILTER (WHERE status = 'ready')::int AS ready,
+         count(*) FILTER (WHERE status = 'exported')::int AS exported,
+         count(*) FILTER (WHERE status = 'attested')::int AS attested,
+         count(*)::int AS total
+       FROM questionnaires WHERE organisation_id = $1`,
+      [orgId],
+    ),
+    pool.query(
+      `SELECT q.id, q.filename, q.status,
+         (SELECT count(*)::int FROM question_instances qi WHERE qi.questionnaire_id = q.id) AS total,
+         (SELECT count(*)::int FROM question_instances qi JOIN answers a ON a.question_instance_id = qi.id
+          WHERE qi.questionnaire_id = q.id AND a.status = 'green') AS green
+       FROM questionnaires q
+       WHERE q.organisation_id = $1
+       ORDER BY q.uploaded_at DESC LIMIT 1`,
+      [orgId],
+    ),
   ]);
 
-  const certsWithStatus = certifications.rows.map((row) => {
-    const daysUntil = Math.ceil((new Date(row.valid_until).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-    const status = daysUntil < 0 ? "expired" : daysUntil <= EXPIRING_SOON_DAYS ? "expiring_soon" : "valid";
-    return { ...row, status, days_until_expiry: daysUntil };
-  });
+  const facts = factCounts.rows[0];
+  const latest = latestQuestionnaire.rows[0];
 
   res.json({
-    certifications: certsWithStatus,
-    headcounts: headcounts.rows[0],
-    passportEntryCount: passportCount.rows[0].n,
-    openRequests: requestCounts.rows[0].open,
-    submittedRequests: requestCounts.rows[0].submitted,
+    factBase: {
+      verifiedCount: facts.verified,
+      totalCanonical: CANONICAL_FACTS.length,
+      completeness: CANONICAL_FACTS.length ? facts.verified / CANONICAL_FACTS.length : 0,
+      conflicts: facts.conflicts,
+    },
+    expiringSoon: expiringFacts.rows,
     documentsCount: docCount.rows[0].n,
+    questionnaires: questionnaireCounts.rows[0],
+    latestQuestionnaire: latest
+      ? { ...latest, readiness: latest.total ? latest.green / latest.total : 0 }
+      : null,
   });
 });

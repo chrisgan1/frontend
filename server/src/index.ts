@@ -8,12 +8,9 @@ import "express-async-errors";
 import cors from "cors";
 import { authRouter } from "./routes/auth.js";
 import { documentsRouter } from "./routes/documents.js";
-import { certificationsRouter } from "./routes/certifications.js";
-import { employeesRouter } from "./routes/employees.js";
-import { projectsRouter } from "./routes/projects.js";
-import { companyProfileRouter } from "./routes/company-profile.js";
-import { passportRouter } from "./routes/passport.js";
-import { requestsRouter } from "./routes/requests.js";
+import { factsRouter } from "./routes/facts.js";
+import { questionnairesRouter } from "./routes/questionnaires.js";
+import { gapsRouter } from "./routes/gaps.js";
 import { dashboardRouter } from "./routes/dashboard.js";
 import { auditRouter } from "./routes/audit.js";
 
@@ -26,12 +23,9 @@ app.get("/api/health", (_req, res) => res.json({ status: "ok" }));
 
 app.use("/api/auth", authRouter);
 app.use("/api", documentsRouter);
-app.use("/api", certificationsRouter);
-app.use("/api", employeesRouter);
-app.use("/api", projectsRouter);
-app.use("/api", companyProfileRouter);
-app.use("/api", passportRouter);
-app.use("/api", requestsRouter);
+app.use("/api", factsRouter);
+app.use("/api", questionnairesRouter);
+app.use("/api", gapsRouter);
 app.use("/api", dashboardRouter);
 app.use("/api", auditRouter);
 
