@@ -44,6 +44,14 @@ function inferResponseType(question: string): ParsedQuestion["responseType"] {
   return "free_text";
 }
 
+// Real header cells are short labels ("Question", "Supplier Response",
+// "Requirement") — a plain substring match alone would also match e.g. a
+// title banner reading "SUPPLIER ASSURANCE QUESTIONNAIRE", which is prose,
+// not a header. Found via testing against a real messy multi-tab
+// workbook: an instructions sheet's title line got mistaken for a header
+// purely because it contained the word "questionnaire".
+const MAX_HEADER_CELL_LENGTH = 40;
+
 function detectHeader(sheet: ExcelJS.Worksheet): { headerRow: number; questionCol: number; responseCol: number } | null {
   const maxScanRow = Math.min(sheet.rowCount, 15);
   for (let r = 1; r <= maxScanRow; r++) {
@@ -52,6 +60,7 @@ function detectHeader(sheet: ExcelJS.Worksheet): { headerRow: number; questionCo
     let responseCol = -1;
     row.eachCell({ includeEmpty: false }, (cell, colNumber) => {
       const text = cellText(cell).toLowerCase();
+      if (text.length > MAX_HEADER_CELL_LENGTH) return;
       if (questionCol === -1 && QUESTION_HEADER_KEYWORDS.some((k) => text.includes(k))) questionCol = colNumber;
       if (responseCol === -1 && RESPONSE_HEADER_KEYWORDS.some((k) => text.includes(k))) responseCol = colNumber;
     });
